@@ -4,6 +4,7 @@ import { useApp } from '../../../shared/context/AppContext';
 import { useData } from '../../../shared/context/DataContext';
 import { useSOPs } from '../../../shared/hooks/useSOPs';
 import { useUsers } from '../../../shared/hooks/useUsers';
+import { useEmployeeDashboard } from '../../../shared/hooks/useEmployeeDashboard';
 
 // Import auth components
 import { LoginPage } from '../../../features/auth/components/LoginPage';
@@ -238,6 +239,9 @@ function AuthenticatedAppRouter({
 }) {
   const { sops, submitSOPForReview } = useSOPs();
   const { users } = useUsers();
+  
+  // Get dashboard data for employee users (for sidebar statistics)
+  const { data: dashboardData } = useEmployeeDashboard();
 
   // Handle submit for review
   const handlePrepareSubmitForReview = (sopId: string, changes: { title: string; content: string; department: string }) => {
@@ -373,6 +377,11 @@ function AuthenticatedAppRouter({
           onNavigate={navigateTo}
           onLogout={onLogout}
           onCollapseChange={setSidebarCollapsed}
+          pendingAcknowledgments={dashboardData?.stats?.pendingAssignments || 0}
+          unreadNotifications={dashboardData?.stats?.unreadNotifications || 0}
+          // Pass additional stats for the Quick Summary section
+          completedAssignments={dashboardData?.stats?.acknowledgedThisMonth || 0}
+          overdueAssignments={dashboardData?.stats?.overdueAssignments || 0}
         />
       )}
       

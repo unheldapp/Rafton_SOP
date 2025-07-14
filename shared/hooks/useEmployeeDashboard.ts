@@ -3,7 +3,6 @@ import { useAuth } from '../context/AuthContext';
 import { AssignmentService, EmployeeAssignment } from '../services/assignmentService';
 import { NotificationService } from '../services/notificationService';
 import { HistoryService } from '../services/historyService';
-import { AcknowledgmentService } from '../services/acknowledgmentService';
 
 export interface EmployeeDashboardStats {
   pendingAssignments: number;
@@ -40,40 +39,41 @@ export interface UseEmployeeDashboardReturn {
 }
 
 export function useEmployeeDashboard(): UseEmployeeDashboardReturn {
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
   const [data, setData] = useState<EmployeeDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchDashboardData = useCallback(async () => {
-    if (!user?.id) return;
+    if (!currentUser?.id) {
+      setLoading(false);
+      return;
+    }
 
     try {
       setLoading(true);
       setError(null);
 
-      console.log('useEmployeeDashboard: Fetching dashboard data for user:', user.id);
+      console.log('useEmployeeDashboard: Fetching dashboard data for user:', currentUser.id);
 
       // Fetch all required data in parallel
       const [
         assignments,
         assignmentStats,
         notifications,
-        recentHistory,
-        acknowledgments
+        recentHistory
       ] = await Promise.all([
-        AssignmentService.getEmployeeAssignments(user.id),
-        AssignmentService.getEmployeeAssignmentStats(user.id),
-        NotificationService.getEmployeeNotifications(user.id),
-        HistoryService.getEmployeeHistory(user.id, 10),
-        AcknowledgmentService.getEmployeeAcknowledgments(user.id)
+        AssignmentService.getEmployeeAssignments(currentUser.id),
+        AssignmentService.getEmployeeAssignmentStats(currentUser.id),
+        NotificationService.getUserNotifications(currentUser.id, { limit: 20 }),
+        HistoryService.getEmployeeHistory(currentUser.id, { limit: 10 })
       ]);
 
-      // Calculate acknowledged this month
+      // Calculate acknowledged this month using history data
       const now = new Date();
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const acknowledgedThisMonth = acknowledgments.filter(ack => 
-        new Date(ack.acknowledgedAt) >= startOfMonth
+      const acknowledgedThisMonth = recentHistory.filter(record => 
+        new Date(record.acknowledgedDate) >= startOfMonth
       ).length;
 
       // Calculate compliance rate
@@ -83,20 +83,20 @@ export function useEmployeeDashboard(): UseEmployeeDashboardReturn {
         : 100;
 
       // Count unread notifications
-      const unreadNotifications = notifications.filter(n => !n.read).length;
+      const unreadNotifications = notifications.filter(n => !n.isRead).length;
 
       // Format recent activity
       const recentActivity: RecentActivity[] = [];
 
-      // Add recent acknowledgments
-      acknowledgments.slice(0, 5).forEach(ack => {
+      // Add recent acknowledgments from history
+      recentHistory.slice(0, 5).forEach(record => {
         recentActivity.push({
-          id: `ack-${ack.id}`,
+          id: `ack-${record.id}`,
           type: 'acknowledged',
-          message: `You acknowledged "${ack.sopTitle}" successfully`,
-          date: ack.acknowledgedAt,
-          documentTitle: ack.sopTitle,
-          sopId: ack.sopId
+          message: `You acknowledged "${record.documentTitle}" successfully`,
+          date: record.acknowledgedDate,
+          documentTitle: record.documentTitle,
+          sopId: record.documentId
         });
       });
 
@@ -121,7 +121,7 @@ export function useEmployeeDashboard(): UseEmployeeDashboardReturn {
           id: `notif-${notification.id}`,
           type: 'notification',
           message: notification.message,
-          date: notification.createdAt,
+          date: notification.date,
           priority: notification.priority
         });
       });
@@ -151,13 +151,17 @@ export function useEmployeeDashboard(): UseEmployeeDashboardReturn {
     } finally {
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [currentUser?.id]);
 
   const acknowledgeAssignment = async (assignmentId: string, sopId: string, sopVersion: string, notes?: string) => {
     try {
       console.log('useEmployeeDashboard: Acknowledging assignment:', assignmentId);
       
-      await AcknowledgmentService.acknowledgeAssignment(assignmentId, sopId, sopVersion, notes);
+      if (!currentUser?.id) {
+        throw new Error('User not authenticated');
+      }
+      
+      await AssignmentService.acknowledgeAssignment(assignmentId, currentUser.id, sopId, sopVersion, notes);
       
       // Refresh dashboard data after acknowledgment
       await fetchDashboardData();

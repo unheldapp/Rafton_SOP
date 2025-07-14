@@ -33,6 +33,8 @@ interface SidebarProps {
   onCollapseChange?: (isCollapsed: boolean) => void;
   pendingAcknowledgments?: number;
   unreadNotifications?: number;
+  completedAssignments?: number;
+  overdueAssignments?: number;
 }
 
 export function Sidebar({ 
@@ -41,8 +43,10 @@ export function Sidebar({
   onNavigate, 
   onLogout, 
   onCollapseChange,
-  pendingAcknowledgments = 3,
-  unreadNotifications = 2
+  pendingAcknowledgments = 0,
+  unreadNotifications = 0,
+  completedAssignments = 0,
+  overdueAssignments = 0
 }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
@@ -221,7 +225,7 @@ export function Sidebar({
                   <CheckSquare className="w-3 h-3 text-emerald-500" />
                   <span className="text-gray-600">Completed</span>
                 </div>
-                <span className="font-medium text-emerald-600">12</span>
+                <span className="font-medium text-emerald-600">{completedAssignments}</span>
               </div>
               
               <div className="flex items-center justify-between text-xs">
@@ -237,7 +241,7 @@ export function Sidebar({
                   <AlertCircle className="w-3 h-3 text-red-500" />
                   <span className="text-gray-600">Overdue</span>
                 </div>
-                <span className="font-medium text-red-600">1</span>
+                <span className="font-medium text-red-600">{overdueAssignments}</span>
               </div>
             </div>
           </div>
