@@ -24,6 +24,7 @@ import { UserManagement } from './UserManagement';
 import { SOPsPage } from '../../../features/sops/components/SOPsPage';
 import { SOPTemplateSelector } from '../../../features/sops/components/SOPTemplateSelector';
 import { SOPEditor } from '../../../features/sops/components/SOPEditor';
+import { SOPViewer } from '../../../features/sops/components/SOPViewer';
 import { SOPVersionControl } from '../../../features/sops/components/SOPVersionControl';
 import { ReviewApproval } from '../../../features/sops/components/ReviewApproval';
 import { SOPReviewPage } from '../../../features/sops/components/SOPReviewPage';
@@ -267,14 +268,25 @@ function AuthenticatedAppRouter({
   if (currentPage === 'editor') {
     return (
       <div className="min-h-screen bg-gray-50">
-        <SOPEditor 
-          sop={selectedSOP}
-          template={selectedTemplate}
-          onNavigate={navigateTo}
-          onSubmitForReview={handlePrepareSubmitForReview}
-          currentUser={currentUser}
-          currentFolderId={currentFolderId}
-        />
+        {currentUser.role === 'employee' ? (
+          <SOPViewer 
+            sop={selectedSOP?.id && selectedSOP?.title ? selectedSOP : null}
+            sopId={selectedSOP?.id}
+            currentUser={currentUser}
+            onNavigate={navigateTo}
+            onBack={() => navigateTo('documents')}
+            showAcknowledgment={true}
+          />
+        ) : (
+          <SOPEditor 
+            sop={selectedSOP}
+            template={selectedTemplate}
+            onNavigate={navigateTo}
+            onSubmitForReview={handlePrepareSubmitForReview}
+            currentUser={currentUser}
+            currentFolderId={currentFolderId}
+          />
+        )}
       </div>
     );
   }
@@ -429,11 +441,11 @@ function AuthenticatedAppRouter({
         
         {/* Employee-specific pages */}
         {currentPage === 'assigned' && (
-          <AssignedToMePage currentUser={currentUser} />
+          <AssignedToMePage currentUser={currentUser} onNavigate={navigateTo} />
         )}
         
         {currentPage === 'documents' && (
-          <AllDocumentsPage currentUser={currentUser} />
+          <AllDocumentsPage currentUser={currentUser} onNavigate={navigateTo} />
         )}
         
         {currentPage === 'history' && (

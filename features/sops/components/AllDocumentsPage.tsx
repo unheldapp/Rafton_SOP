@@ -1,42 +1,102 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from "../../../shared/components/ui/button";
-import { Input } from "../../../shared/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../shared/components/ui/card";
 import { Badge } from "../../../shared/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../shared/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../shared/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../shared/components/ui/dialog";
+import { Input } from "../../../shared/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../shared/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../shared/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../shared/components/ui/table";
+import { Separator } from "../../../shared/components/ui/separator";
 import { ScrollArea } from "../../../shared/components/ui/scroll-area";
-import { useDocuments } from "../../../shared/hooks/useDocuments";
-import { EmployeeDocument } from "../../../shared/services/documentService";
-import { useAuth } from "../../../shared/context/AuthContext";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../shared/components/ui/tabs";
 import { 
   Search, 
   Filter, 
   Eye, 
+  Download, 
   FileText, 
   Calendar, 
+  Tag, 
+  Building2, 
   User, 
-  Download,
+  Grid, 
+  List, 
+  SortAsc, 
+  SortDesc,
   BookOpen,
-  Building,
-  Tag,
-  Grid3X3,
-  List,
-  Clock,
-  Shield,
-  Zap,
-  Users,
-  Settings,
-  AlertTriangle,
   Info,
+  ArrowUpDown,
+  Clock,
+  Star,
+  TrendingUp,
+  BarChart3,
+  Users,
+  Shield,
+  AlertCircle,
+  CheckCircle,
+  XCircle,
+  FileIcon,
+  Bookmark,
+  Hash,
+  Target,
+  Zap,
+  Activity,
   ChevronRight,
-  ExternalLink,
+  Archive,
   RefreshCw,
-  Loader2,
-  TrendingUp
+  AlertTriangle,
+  Sparkles,
+  Layers,
+  FolderOpen,
+  Globe,
+  Lock,
+  Unlock,
+  Settings,
+  Plus,
+  Minus,
+  MoreHorizontal,
+  ExternalLink,
+  Share2,
+  Copy,
+  Printer,
+  Mail,
+  Phone,
+  MessageSquare,
+  Video,
+  Link,
+  Image,
+  Paperclip,
+  Folder,
+  ChevronDown,
+  ChevronUp,
+  Heart,
+  ThumbsUp,
+  Flag,
+  Trash2,
+  Edit,
+  Save,
+  X,
+  Check,
+  AlertOctagon,
+  HelpCircle,
+  Lightbulb,
+  Megaphone,
+  Bell,
+  BellOff,
+  Volume2,
+  VolumeX,
+  Play,
+  Pause,
+  Stop,
+  SkipBack,
+  SkipForward,
+  Rewind,
+  FastForward,
+  Loader2
 } from 'lucide-react';
+import { sopService } from '../../../shared/services/sopService';
+import { useSOPs } from '../../../shared/hooks/useSOPs';
+import { useAuth } from '../../../shared/context/AuthContext';
+import { toast } from 'sonner';
 
 interface AllDocumentsPageProps {
   currentUser: {
@@ -46,14 +106,14 @@ interface AllDocumentsPageProps {
     role: string;
     department?: string;
   };
+  onNavigate?: (page: string, sop?: any) => void;
 }
 
-export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
+export function AllDocumentsPage({ currentUser, onNavigate }: AllDocumentsPageProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
-  const [selectedDocument, setSelectedDocument] = useState<EmployeeDocument | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [sortBy, setSortBy] = useState<'title' | 'department' | 'lastUpdated' | 'type'>('lastUpdated');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -65,16 +125,44 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
   console.log('AllDocumentsPage: authUser:', authUser);
   console.log('AllDocumentsPage: companyId:', companyId);
 
-  // Use the real documents hook
+  // Use the real SOPs hook
   const { 
-    documents, 
+    sops: documents, 
     loading, 
-    error, 
-    stats, 
-    refreshDocuments, 
-    incrementViewCount, 
-    incrementDownloadCount 
-  } = useDocuments(companyId);
+    error,
+    fetchSOPs,
+    refreshSOPs
+  } = useSOPs();
+
+  // Fetch SOPs when component mounts
+  useEffect(() => {
+    fetchSOPs();
+  }, [fetchSOPs]);
+
+  // Placeholder functions for view/download counting
+  const incrementViewCount = async (id: string) => {
+    console.log('incrementViewCount called for:', id);
+    // TODO: Implement view count increment if needed
+  };
+
+  const incrementDownloadCount = async (id: string) => {
+    console.log('incrementDownloadCount called for:', id);
+    // TODO: Implement download count increment if needed
+  };
+
+  const stats = {
+    total: documents.length,
+    pending: documents.filter(doc => doc.status === 'pending').length,
+    published: documents.filter(doc => doc.status === 'published').length,
+    draft: documents.filter(doc => doc.status === 'draft').length,
+    recent: documents.filter(doc => new Date(doc.updated_at).getTime() > Date.now() - 30 * 24 * 60 * 60 * 1000).length, // Recent updates in last 30 days
+    expiringSoon: documents.filter(doc => doc.expires_at && new Date(doc.expires_at).getTime() < Date.now() + 30 * 24 * 60 * 60 * 1000 && new Date(doc.expires_at).getTime() > Date.now()).length, // Expiring soon (within 30 days)
+    byDepartment: documents.reduce((acc, doc) => {
+      const dept = doc.department || 'General';
+      acc[dept] = (acc[dept] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>)
+  };
 
   // Get unique values for filters
   const departments = useMemo(() => 
@@ -82,11 +170,11 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
     [documents]
   );
   const documentTypes = useMemo(() => 
-    [...new Set(documents.map(doc => doc.type))], 
+    [...new Set(documents.map(doc => 'SOP'))], // All documents are SOPs in this context
     [documents]
   );
   const allTags = useMemo(() => 
-    [...new Set(documents.flatMap(doc => doc.tags))], 
+    [...new Set(documents.flatMap(doc => doc.tags || []))], 
     [documents]
   );
 
@@ -96,13 +184,13 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
       const matchesSearch = searchTerm === '' || 
         doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         doc.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        doc.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        doc.author.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        doc.author.lastName.toLowerCase().includes(searchTerm.toLowerCase());
+        (doc.tags || []).some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (doc.author?.first_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (doc.author?.last_name || '').toLowerCase().includes(searchTerm.toLowerCase());
       
       const matchesDepartment = departmentFilter === 'all' || doc.department === departmentFilter;
-      const matchesType = typeFilter === 'all' || doc.type === typeFilter;
-      const matchesTag = tagFilter === 'all' || doc.tags.includes(tagFilter);
+      const matchesType = typeFilter === 'all' || typeFilter === 'SOP'; // All are SOPs
+      const matchesTag = tagFilter === 'all' || (doc.tags || []).includes(tagFilter);
       
       return matchesSearch && matchesDepartment && matchesType && matchesTag;
     });
@@ -122,12 +210,12 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
           bValue = (b.department || '').toLowerCase();
           break;
         case 'lastUpdated':
-          aValue = new Date(a.lastUpdated).getTime();
-          bValue = new Date(b.lastUpdated).getTime();
+          aValue = new Date(a.updated_at).getTime();
+          bValue = new Date(b.updated_at).getTime();
           break;
         case 'type':
-          aValue = a.type.toLowerCase();
-          bValue = b.type.toLowerCase();
+          aValue = 'SOP';
+          bValue = 'SOP';
           break;
         default:
           return 0;
@@ -167,132 +255,74 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
     return colors[type as keyof typeof colors] || 'bg-gray-100 text-gray-800';
   };
 
-  const handleViewDocument = async (document: EmployeeDocument) => {
-    setSelectedDocument(document);
+  const handleViewDocument = async (document: any) => {
     try {
+      console.log('AllDocumentsPage: handleViewDocument called with:', document);
+      console.log('AllDocumentsPage: document.id:', document.id);
+      console.log('AllDocumentsPage: document keys:', Object.keys(document));
+      
       await incrementViewCount(document.id);
+      
+      // Navigate to editor page with the document - for employees this will show SOPViewer
+      if (onNavigate) {
+        // Pass the full document object with the proper structure expected by SOPViewer
+        const sopData = {
+          id: document.id,
+          title: document.title,
+          content: document.content,
+          version: document.version,
+          status: document.status,
+          priority: document.priority,
+          department: document.department,
+          created_at: document.created_at,
+          updated_at: document.updated_at,
+          author_name: document.author ? `${document.author.first_name} ${document.author.last_name}` : 'Unknown',
+          // Include other necessary fields
+          description: document.description,
+          tags: document.tags || [],
+          view_count: document.view_count || 0,
+          download_count: document.download_count || 0,
+          comments_enabled: document.comments_enabled || true,
+          locked: document.locked || false,
+          ai_generated: document.ai_generated || false,
+          expires_at: document.expires_at,
+          author_id: document.author_id,
+          reviewer_id: document.reviewer_id,
+          approved_by: document.approved_by,
+          approved_at: document.approved_at,
+          published_at: document.published_at,
+          review_frequency: document.review_frequency,
+          next_review_date: document.next_review_date,
+          document_url: document.document_url,
+          document_type: document.document_type,
+          file_size: document.file_size,
+          folder_id: document.folder_id,
+          category_id: document.category_id,
+          company_id: document.company_id,
+          integration_status: document.integration_status,
+          deleted_at: document.deleted_at
+        };
+        
+        onNavigate('editor', sopData);
+      }
     } catch (error) {
-      console.error('Error incrementing view count:', error);
+      console.error('Error viewing document:', error);
     }
   };
 
-  const handleDownloadDocument = async (document: EmployeeDocument) => {
+  const handleDownloadDocument = async (document: any) => {
     try {
       await incrementDownloadCount(document.id);
-      if (document.downloadUrl) {
-        window.open(document.downloadUrl, '_blank');
+      if (document.document_url) {
+        window.open(document.document_url, '_blank');
       }
     } catch (error) {
       console.error('Error downloading document:', error);
     }
   };
 
-  const DocumentViewer = ({ document }: { document: EmployeeDocument }) => {
-    const TypeIcon = getTypeIcon(document.type);
-    
-    return (
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-3">
-              <div className="flex items-center space-x-2">
-                <TypeIcon className="w-5 h-5 text-purple-600" />
-                <span className="text-sm font-medium text-gray-600">{document.type}</span>
-              </div>
-              <span className="text-gray-400">•</span>
-              <Badge variant="outline" className="text-xs">
-                v{document.version}
-              </Badge>
-            </div>
-            <Badge className={`${getTypeColor(document.type)} border-0`}>
-              {document.type}
-            </Badge>
-          </div>
-          
-          <h1 className="text-2xl font-semibold text-gray-900 mb-2">{document.title}</h1>
-          {document.description && (
-            <p className="text-gray-600 mb-4">{document.description}</p>
-          )}
-          
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div className="flex items-center space-x-2 text-sm text-gray-600">
-              <Building className="w-4 h-4" />
-              <span>{document.department || 'General'}</span>
-            </div>
-            <div className="flex items-center space-x-2 text-sm text-gray-600">
-              <User className="w-4 h-4" />
-              <span>{document.author.firstName} {document.author.lastName}</span>
-            </div>
-            <div className="flex items-center space-x-2 text-sm text-gray-600">
-              <Calendar className="w-4 h-4" />
-              <span>Updated: {new Date(document.lastUpdated).toLocaleDateString()}</span>
-            </div>
-            <div className="flex items-center space-x-2 text-sm text-gray-600">
-              <FileText className="w-4 h-4" />
-              <span>{document.fileSize || 'N/A'}</span>
-            </div>
-          </div>
-        </div>
-        
-        <div className="border-t pt-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">Document Content</h2>
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2 text-sm text-gray-600">
-                <Eye className="w-4 h-4" />
-                <span>{document.viewCount} views</span>
-              </div>
-              <div className="flex items-center space-x-2 text-sm text-gray-600">
-                <Download className="w-4 h-4" />
-                <span>{document.downloadCount} downloads</span>
-              </div>
-            </div>
-          </div>
-          
-          <ScrollArea className="h-96 border rounded-lg p-6">
-            <div className="prose max-w-none">
-              <div className="whitespace-pre-wrap text-sm text-gray-700">
-                {document.content}
-              </div>
-            </div>
-          </ScrollArea>
-        </div>
-        
-        {document.tags && document.tags.length > 0 && (
-          <div className="mt-6 pt-6 border-t">
-            <h3 className="text-sm font-medium text-gray-900 mb-3">Tags</h3>
-            <div className="flex flex-wrap gap-2">
-              {document.tags.map(tag => (
-                <Badge key={tag} variant="secondary" className="text-xs">
-                  {tag}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
-        
-        <div className="mt-6 pt-6 border-t">
-          <div className="flex items-center justify-between">
-            <div className="text-sm text-gray-600">
-              <p>Published: {document.publishedAt ? new Date(document.publishedAt).toLocaleDateString() : 'N/A'}</p>
-              {document.expiresAt && (
-                <p>Expires: {new Date(document.expiresAt).toLocaleDateString()}</p>
-              )}
-            </div>
-            {document.downloadUrl && (
-              <Button onClick={() => handleDownloadDocument(document)} className="bg-purple-600 hover:bg-purple-700">
-                <Download className="w-4 h-4 mr-2" />
-                Download PDF
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const DocumentCard = ({ document }: { document: EmployeeDocument }) => {
-    const TypeIcon = getTypeIcon(document.type);
+  const DocumentCard = ({ document }: { document: any }) => {
+    const TypeIcon = getTypeIcon('SOP'); // All are SOPs
     
     return (
       <Card className="hover:shadow-md transition-shadow">
@@ -300,8 +330,8 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
           <div className="flex items-start justify-between mb-3">
             <div className="flex items-center space-x-2">
               <TypeIcon className="w-4 h-4 text-purple-600" />
-              <Badge className={`${getTypeColor(document.type)} border-0 text-xs`}>
-                {document.type}
+              <Badge className={`${getTypeColor('SOP')} border-0 text-xs`}>
+                SOP
               </Badge>
             </div>
             <Badge variant="outline" className="text-xs">
@@ -316,47 +346,37 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
           
           <div className="space-y-2 mb-4">
             <div className="flex items-center space-x-2 text-xs text-gray-500">
-              <Building className="w-3 h-3" />
+              <Building2 className="w-3 h-3" />
               <span>{document.department || 'General'}</span>
             </div>
             <div className="flex items-center space-x-2 text-xs text-gray-500">
               <Calendar className="w-3 h-3" />
-              <span>Updated: {new Date(document.lastUpdated).toLocaleDateString()}</span>
+              <span>Updated: {new Date(document.updated_at).toLocaleDateString()}</span>
             </div>
           </div>
           
           <div className="flex flex-wrap gap-1 mb-4">
-            {document.tags.slice(0, 3).map(tag => (
+            {(document.tags || []).slice(0, 3).map(tag => (
               <Badge key={tag} variant="secondary" className="text-xs">
                 {tag}
               </Badge>
             ))}
-            {document.tags.length > 3 && (
+            {(document.tags || []).length > 3 && (
               <Badge variant="secondary" className="text-xs">
-                +{document.tags.length - 3}
+                +{(document.tags || []).length - 3}
               </Badge>
             )}
           </div>
           
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="w-full"
-                onClick={() => handleViewDocument(document)}
-              >
-                <Eye className="w-4 h-4 mr-2" />
-                View Document
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Document Library</DialogTitle>
-              </DialogHeader>
-              {selectedDocument && <DocumentViewer document={selectedDocument} />}
-            </DialogContent>
-          </Dialog>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="w-full"
+            onClick={() => handleViewDocument(document)}
+          >
+            <Eye className="w-4 h-4 mr-2" />
+            View Document
+          </Button>
         </CardContent>
       </Card>
     );
@@ -385,7 +405,7 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
             <AlertTriangle className="w-8 h-8 text-red-500 mx-auto mb-4" />
             <p className="text-red-600 mb-4">Error loading documents</p>
             <p className="text-gray-600 text-sm mb-4">{error}</p>
-            <Button onClick={refreshDocuments} variant="outline">
+            <Button onClick={refreshSOPs} variant="outline">
               <RefreshCw className="w-4 h-4 mr-2" />
               Retry
             </Button>
@@ -449,7 +469,7 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
                 </SelectContent>
               </Select>
               <Button 
-                onClick={refreshDocuments}
+                onClick={refreshSOPs}
                 variant="outline"
                 size="sm"
               >
@@ -492,7 +512,7 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
                   <p className="text-sm font-medium text-gray-600">Departments</p>
                   <p className="text-2xl font-bold text-blue-600">{Object.keys(stats.byDepartment).length}</p>
                 </div>
-                <Building className="w-8 h-8 text-blue-600" />
+                <Building2 className="w-8 h-8 text-blue-600" />
               </div>
             </CardContent>
           </Card>
@@ -527,7 +547,7 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
                 size="sm"
                 onClick={() => setViewMode('cards')}
               >
-                <Grid3X3 className="w-4 h-4 mr-2" />
+                <Grid className="w-4 h-4 mr-2" />
                 Cards
               </Button>
             </div>
@@ -582,7 +602,7 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
                   </TableHeader>
                   <TableBody>
                     {filteredDocuments.map((document) => {
-                      const TypeIcon = getTypeIcon(document.type);
+                      const TypeIcon = getTypeIcon('SOP'); // All are SOPs
                       
                       return (
                         <TableRow key={document.id} className="hover:bg-gray-50">
@@ -597,57 +617,47 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center space-x-2">
-                              <Building className="w-4 h-4 text-gray-400" />
+                              <Building2 className="w-4 h-4 text-gray-400" />
                               <span className="text-sm text-gray-900">{document.department || 'General'}</span>
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge className={`${getTypeColor(document.type)} border-0`}>
-                              {document.type}
+                            <Badge className={`${getTypeColor('SOP')} border-0`}>
+                              SOP
                             </Badge>
                           </TableCell>
                           <TableCell>
                             <div className="text-sm text-gray-900">
-                              {new Date(document.lastUpdated).toLocaleDateString()}
+                              {new Date(document.updated_at).toLocaleDateString()}
                             </div>
                             <div className="text-xs text-gray-500">v{document.version}</div>
                           </TableCell>
                           <TableCell>
                             <div className="flex flex-wrap gap-1 max-w-48">
-                              {document.tags.slice(0, 2).map(tag => (
+                              {(document.tags || []).slice(0, 2).map(tag => (
                                 <Badge key={tag} variant="secondary" className="text-xs">
                                   {tag}
                                 </Badge>
                               ))}
-                              {document.tags.length > 2 && (
+                              {(document.tags || []).length > 2 && (
                                 <Badge variant="secondary" className="text-xs">
-                                  +{document.tags.length - 2}
+                                  +{(document.tags || []).length - 2}
                                 </Badge>
                               )}
                             </div>
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center space-x-2">
-                              <Dialog>
-                                <DialogTrigger asChild>
-                                  <Button 
-                                    variant="outline" 
-                                    size="sm"
-                                    onClick={() => handleViewDocument(document)}
-                                  >
-                                    <Eye className="w-4 h-4 mr-2" />
-                                    View
-                                  </Button>
-                                </DialogTrigger>
-                                <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-                                  <DialogHeader>
-                                    <DialogTitle>Document Library</DialogTitle>
-                                  </DialogHeader>
-                                  {selectedDocument && <DocumentViewer document={selectedDocument} />}
-                                </DialogContent>
-                              </Dialog>
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => handleViewDocument(document)}
+                              >
+                                <Eye className="w-4 h-4 mr-2" />
+                                View
+                              </Button>
                               
-                              {document.downloadUrl && (
+                              {document.document_url && (
                                 <Button 
                                   variant="ghost" 
                                   size="sm"

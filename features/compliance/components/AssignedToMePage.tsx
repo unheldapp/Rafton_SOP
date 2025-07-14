@@ -4,7 +4,6 @@ import { Input } from "../../../shared/components/ui/input";
 import { Badge } from "../../../shared/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../shared/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../shared/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../shared/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../shared/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../shared/components/ui/tabs";
 import { Checkbox } from "../../../shared/components/ui/checkbox";
@@ -40,13 +39,13 @@ interface AssignedToMePageProps {
     role: string;
     department?: string;
   };
+  onNavigate?: (page: string, sop?: any) => void;
 }
 
-export function AssignedToMePage({ currentUser }: AssignedToMePageProps) {
+export function AssignedToMePage({ currentUser, onNavigate }: AssignedToMePageProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
-  const [selectedDocument, setSelectedDocument] = useState<EmployeeAssignment | null>(null);
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [acknowledgeLoading, setAcknowledgeLoading] = useState<string | null>(null);
@@ -124,11 +123,62 @@ export function AssignedToMePage({ currentUser }: AssignedToMePageProps) {
     return diffDays;
   };
 
+  const handleViewDocument = async (assignment: EmployeeAssignment) => {
+    try {
+      console.log('AssignedToMePage: handleViewDocument called with assignment:', assignment);
+      
+      // Navigate to editor page with the document - for employees this will show SOPViewer
+      if (onNavigate) {
+        // Create the full SOP object from assignment data with the proper structure expected by SOPViewer
+        const sopData = {
+          id: assignment.sopId,
+          title: assignment.title,
+          content: assignment.content,
+          version: assignment.version,
+          status: 'published', // Assignments are typically for published SOPs
+          priority: assignment.priority,
+          department: assignment.department,
+          created_at: assignment.assignedOn, // Use assignment date as fallback
+          updated_at: assignment.assignedOn, // Use assignment date as fallback
+          author_name: `${assignment.assignedBy.firstName} ${assignment.assignedBy.lastName}`,
+          // Include other necessary fields
+          description: assignment.description,
+          tags: assignment.tags || [],
+          view_count: 0,
+          download_count: 0,
+          comments_enabled: true,
+          locked: false,
+          ai_generated: false,
+          expires_at: assignment.dueDate,
+          author_id: assignment.assignedBy.id,
+          reviewer_id: null,
+          approved_by: null,
+          approved_at: null,
+          published_at: assignment.assignedOn,
+          review_frequency: null,
+          next_review_date: assignment.dueDate,
+          document_url: null,
+          document_type: 'html',
+          file_size: null,
+          folder_id: null,
+          category_id: null,
+          company_id: null, // Will be populated by the viewer
+          integration_status: null,
+          deleted_at: null
+        };
+        
+        onNavigate('editor', sopData);
+      }
+    } catch (error) {
+      console.error('Error viewing document:', error);
+    }
+  };
+
   const handleAcknowledge = async (assignment: EmployeeAssignment) => {
     try {
       setAcknowledgeLoading(assignment.assignmentId);
       await acknowledgeAssignment(assignment.assignmentId, assignment.sopId, assignment.version);
-      setSelectedDocument(null);
+      // setSelectedDocument(null); // This line was removed as per the edit hint
     } catch (error) {
       console.error('Error acknowledging assignment:', error);
     } finally {
@@ -166,89 +216,6 @@ export function AssignedToMePage({ currentUser }: AssignedToMePageProps) {
       setSelectedDocuments([]);
     }
   };
-
-  const DocumentViewer = ({ document }: { document: EmployeeAssignment }) => (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <FileText className="w-5 h-5 text-purple-600" />
-          <div>
-            <h3 className="font-semibold text-gray-900">{document.title}</h3>
-            <p className="text-sm text-gray-500">Version {document.version}</p>
-          </div>
-        </div>
-        <div className="flex items-center space-x-2">
-          {getPriorityBadge(document.priority)}
-          {getStatusBadge(document.status)}
-        </div>
-      </div>
-      
-      <div className="grid grid-cols-2 gap-4 py-4 border-t border-b">
-        <div>
-          <p className="text-sm font-medium text-gray-500">Assigned By</p>
-          <p className="text-sm text-gray-900">{document.assignedBy.firstName} {document.assignedBy.lastName}</p>
-        </div>
-        <div>
-          <p className="text-sm font-medium text-gray-500">Department</p>
-          <p className="text-sm text-gray-900">{document.department || 'Not specified'}</p>
-        </div>
-        <div>
-          <p className="text-sm font-medium text-gray-500">Assigned On</p>
-          <p className="text-sm text-gray-900">{new Date(document.assignedOn).toLocaleDateString()}</p>
-        </div>
-        <div>
-          <p className="text-sm font-medium text-gray-500">Due Date</p>
-          <p className="text-sm text-gray-900">
-            {document.dueDate ? new Date(document.dueDate).toLocaleDateString() : 'No due date'}
-          </p>
-        </div>
-      </div>
-      
-      {document.description && (
-        <div>
-          <h4 className="font-medium text-gray-900 mb-2">Description</h4>
-          <p className="text-sm text-gray-600">{document.description}</p>
-        </div>
-      )}
-      
-      <div>
-        <h4 className="font-medium text-gray-900 mb-2">Content</h4>
-        <ScrollArea className="h-64 border rounded-md p-4">
-          <div className="text-sm text-gray-700 whitespace-pre-wrap">
-            {document.content}
-          </div>
-        </ScrollArea>
-      </div>
-      
-      {document.tags && document.tags.length > 0 && (
-        <div>
-          <h4 className="font-medium text-gray-900 mb-2">Tags</h4>
-          <div className="flex flex-wrap gap-2">
-            {document.tags.map(tag => (
-              <Badge key={tag} variant="outline" className="text-xs">{tag}</Badge>
-            ))}
-          </div>
-        </div>
-      )}
-      
-      {document.status === 'pending' && (
-        <div className="flex justify-end space-x-2 pt-4 border-t">
-          <Button 
-            onClick={() => handleAcknowledge(document)}
-            disabled={acknowledgeLoading === document.assignmentId}
-            className="bg-purple-600 hover:bg-purple-700"
-          >
-            {acknowledgeLoading === document.assignmentId ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <CheckCircle className="w-4 h-4 mr-2" />
-            )}
-            Acknowledge
-          </Button>
-        </div>
-      )}
-    </div>
-  );
 
   // Show loading state
   if (loading) {
@@ -533,23 +500,14 @@ export function AssignedToMePage({ currentUser }: AssignedToMePageProps) {
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center space-x-2">
-                                <Dialog>
-                                  <DialogTrigger asChild>
-                                    <Button 
-                                      variant="ghost" 
-                                      size="sm"
-                                      onClick={() => setSelectedDocument(assignment)}
-                                    >
-                                      <Eye className="w-4 h-4" />
-                                    </Button>
-                                  </DialogTrigger>
-                                  <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-                                    <DialogHeader>
-                                      <DialogTitle>Document Details</DialogTitle>
-                                    </DialogHeader>
-                                    {selectedDocument && <DocumentViewer document={selectedDocument} />}
-                                  </DialogContent>
-                                </Dialog>
+                                {/* The Dialog component was removed, so this section is simplified */}
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  onClick={() => handleViewDocument(assignment)}
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </Button>
                                 
                                 {assignment.status === 'pending' && (
                                   <Button 

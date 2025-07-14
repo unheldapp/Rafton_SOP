@@ -29,6 +29,22 @@ export interface EmployeeAssignment {
   acknowledgedDate?: string;
   notes: string | null;
   assignmentId: string;
+  // Additional powerful fields
+  expiresAt: string | null;
+  nextReviewDate: string | null;
+  reviewFrequency: number | null;
+  publishedAt: string | null;
+  approvedAt: string | null;
+  author: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  } | null;
+  documentUrl: string | null;
+  fileSize: number | null;
+  viewCount: number;
+  downloadCount: number;
 }
 
 export class AssignmentService {
@@ -60,7 +76,22 @@ export class AssignmentService {
             tags,
             status,
             document_type,
-            created_at
+            expires_at,
+            next_review_date,
+            review_frequency,
+            published_at,
+            approved_at,
+            document_url,
+            file_size,
+            view_count,
+            download_count,
+            created_at,
+            author:users!author_id(
+              id,
+              first_name,
+              last_name,
+              email
+            )
           ),
           assigned_by_user:users!assigned_by(
             id,
@@ -94,6 +125,7 @@ export class AssignmentService {
         const sop = assignment.sop as any;
         const assignedByUser = assignment.assigned_by_user as any;
         const acknowledgment = assignment.acknowledgments?.[0] as any;
+        const author = sop.author as any;
 
         // Determine status based on due date and acknowledgment
         let status: 'pending' | 'acknowledged' | 'overdue' = 'pending';
@@ -136,7 +168,23 @@ export class AssignmentService {
           tags: sop.tags || [],
           acknowledgedDate: acknowledgment?.acknowledged_at,
           notes: assignment.notes,
-          assignmentId: assignment.id
+          assignmentId: assignment.id,
+          // Additional powerful fields
+          expiresAt: sop.expires_at,
+          nextReviewDate: sop.next_review_date,
+          reviewFrequency: sop.review_frequency,
+          publishedAt: sop.published_at,
+          approvedAt: sop.approved_at,
+          author: author ? {
+            id: author.id,
+            firstName: author.first_name,
+            lastName: author.last_name,
+            email: author.email
+          } : null,
+          documentUrl: sop.document_url,
+          fileSize: sop.file_size,
+          viewCount: sop.view_count,
+          downloadCount: sop.download_count
         };
       });
 

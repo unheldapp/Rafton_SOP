@@ -106,9 +106,9 @@ export function useEmployeeDashboard(): UseEmployeeDashboardReturn {
           recentActivity.push({
             id: `assign-${assignment.id}`,
             type: 'assigned',
-            message: `New document assigned: "${assignment.sopTitle}"`,
-            date: assignment.createdAt,
-            documentTitle: assignment.sopTitle,
+            message: `New document assigned: "${assignment.title}"`,
+            date: assignment.assignedOn,
+            documentTitle: assignment.title,
             sopId: assignment.sopId,
             priority: assignment.priority
           });
