@@ -49,6 +49,7 @@ export interface UpdateWorkingCopyData {
 export interface SubmitForReviewData {
   reviewers: string[];
   summary: string;
+  version: string;
 }
 
 export class WorkingCopyService {
@@ -240,57 +241,114 @@ export class WorkingCopyService {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
 
-    // Get current working copy to check ownership
-    const { data: currentCopy } = await supabase
+    // Get current working copy with SOP details to check ownership and get SOP info
+    const { data: currentCopy, error: fetchError } = await supabase
       .from('working_copies')
-      .select('user_id, is_submitted')
+      .select(`
+        *,
+        sop:sops(*)
+      `)
       .eq('id', id)
       .single();
 
-    if (!currentCopy) throw new Error('Working copy not found');
+    if (fetchError || !currentCopy) throw new Error('Working copy not found');
     if (currentCopy.user_id !== user.id) throw new Error('Unauthorized');
     if (currentCopy.is_submitted) throw new Error('Working copy already submitted');
 
-    // Start transaction
-    const { data: updatedCopy, error: updateError } = await supabase
-      .from('working_copies')
-      .update({
-        is_submitted: true,
-        submitted_at: new Date().toISOString(),
-        changes: {
-          ...currentCopy.changes,
-          submission_summary: data.summary
-        }
-      })
-      .eq('id', id)
-      .select(`
-        *,
-        sop:sops(*),
-        user:users(*)
-      `)
+    // Check if version already exists
+    const { data: existingVersion } = await supabase
+      .from('sop_versions')
+      .select('id')
+      .eq('sop_id', currentCopy.sop_id)
+      .eq('version', data.version)
       .single();
 
-    if (updateError) throw updateError;
+    if (existingVersion) throw new Error(`Version ${data.version} already exists`);
 
-    // Create review records for each reviewer
-    const reviewRecords = data.reviewers.map(reviewerId => ({
-      working_copy_id: id,
-      reviewer_id: reviewerId,
-      status: 'pending' as const,
-      comments: null,
-      reviewed_at: null
-    }));
+    // Start transaction-like operations
+    try {
+      // 1. Update working copy to submitted status
+      const { data: updatedCopy, error: updateError } = await supabase
+        .from('working_copies')
+        .update({
+          is_submitted: true,
+          submitted_at: new Date().toISOString(),
+          changes: {
+            ...currentCopy.changes,
+            submission_summary: data.summary,
+            proposed_version: data.version
+          }
+        })
+        .eq('id', id)
+        .select(`
+          *,
+          sop:sops(*),
+          user:users(*)
+        `)
+        .single();
 
-    const { error: reviewError } = await supabase
-      .from('working_copy_reviews')
-      .insert(reviewRecords);
+      if (updateError) throw updateError;
 
-    if (reviewError) throw reviewError;
+      // 2. Create version record
+      const { error: versionError } = await supabase
+        .from('sop_versions')
+        .insert({
+          sop_id: currentCopy.sop_id,
+          version: data.version,
+          title: currentCopy.title,
+          content: currentCopy.content,
+          description: currentCopy.description,
+          change_summary: data.summary,
+          author_id: user.id
+        });
 
-    // Send notifications to reviewers
-    await this.sendReviewNotifications(id, data.reviewers);
+      if (versionError) throw versionError;
 
-    return updatedCopy;
+      // 3. Update SOP status to 'review' and set reviewer
+      const { error: sopUpdateError } = await supabase
+        .from('sops')
+        .update({
+          status: 'review',
+          reviewer_id: data.reviewers[0], // Set first reviewer as primary reviewer
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', currentCopy.sop_id);
+
+      if (sopUpdateError) throw sopUpdateError;
+
+      // 4. Create review records for each reviewer
+      const reviewRecords = data.reviewers.map(reviewerId => ({
+        working_copy_id: id,
+        reviewer_id: reviewerId,
+        status: 'pending' as const,
+        comments: null,
+        reviewed_at: null
+      }));
+
+      const { error: reviewError } = await supabase
+        .from('working_copy_reviews')
+        .insert(reviewRecords);
+
+      if (reviewError) throw reviewError;
+
+      // 5. Send notifications to reviewers
+      await this.sendReviewNotifications(id, data.reviewers);
+
+      // 6. Create audit log entry
+      await this.logAuditEvent(
+        'working_copy_submitted',
+        'working_copy',
+        id,
+        { is_submitted: false },
+        { is_submitted: true, version: data.version, reviewers: data.reviewers },
+        user.id
+      );
+
+      return updatedCopy;
+    } catch (error) {
+      console.error('Error in submitForReview:', error);
+      throw error;
+    }
   }
 
   /**
@@ -507,5 +565,44 @@ export class WorkingCopyService {
       },
       priority: 'medium'
     });
+  }
+
+  private static async logAuditEvent(
+    action: string,
+    resourceType: string,
+    resourceId: string,
+    oldValues: any,
+    newValues: any,
+    userId: string
+  ): Promise<void> {
+    try {
+      // Get user's company_id
+      const { data: userData } = await supabase
+        .from('users')
+        .select('company_id')
+        .eq('id', userId)
+        .single();
+
+      if (!userData) return;
+
+      const { error } = await supabase
+        .from('audit_logs')
+        .insert({
+          company_id: userData.company_id,
+          user_id: userId,
+          action,
+          resource_type: resourceType,
+          resource_id: resourceId,
+          old_values: oldValues,
+          new_values: newValues,
+          created_at: new Date().toISOString()
+        });
+
+      if (error) {
+        console.error('Error creating audit log:', error);
+      }
+    } catch (error) {
+      console.error('Error in logAuditEvent:', error);
+    }
   }
 } 

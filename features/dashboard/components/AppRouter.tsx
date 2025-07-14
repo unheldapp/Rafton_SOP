@@ -5,6 +5,7 @@ import { useData } from '../../../shared/context/DataContext';
 import { useSOPs } from '../../../shared/hooks/useSOPs';
 import { useUsers } from '../../../shared/hooks/useUsers';
 import { useEmployeeDashboard } from '../../../shared/hooks/useEmployeeDashboard';
+import { WorkingCopyService } from '../../../shared/services/workingCopyService';
 
 // Import auth components
 import { LoginPage } from '../../../features/auth/components/LoginPage';
@@ -332,11 +333,24 @@ function AuthenticatedAppRouter({
           workingCopy={pendingReviewData!.workingCopy}
           users={users}
           onNavigate={navigateTo}
-          onSubmitForReview={(workingCopyId, reviewers, summary, version) => {
-            // Handle working copy submission
-            console.log('Submitting working copy for review:', { workingCopyId, reviewers, summary, version });
-            // For now, navigate back to SOPs page
-            navigateTo('sops');
+          onSubmitForReview={async (workingCopyId, reviewers, summary, version) => {
+            try {
+              // Submit working copy for review using the enhanced service
+              await WorkingCopyService.submitForReview(workingCopyId, {
+                reviewers,
+                summary,
+                version
+              });
+              
+              console.log('✅ Working copy submitted for review successfully:', { workingCopyId, reviewers, summary, version });
+              
+              // Navigate back to SOPs page
+              navigateTo('sops');
+            } catch (error) {
+              console.error('❌ Failed to submit working copy for review:', error);
+              // You could show an error toast here if you have access to toast
+              // toast.error(`Failed to submit for review: ${error.message}`);
+            }
           }}
         />
       </div>
