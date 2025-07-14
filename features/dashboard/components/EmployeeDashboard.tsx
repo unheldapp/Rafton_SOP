@@ -476,7 +476,7 @@ export function EmployeeDashboard({ currentUser, onNavigate }: EmployeeDashboard
                               <div className="flex items-center space-x-2 mb-1">
                                 <h4 className="font-medium text-gray-900">
                                   {assignment.title}
-                                </h4>
+                              </h4>
                                 <Badge variant="outline" className="text-xs">
                                   {assignment.type}
                                 </Badge>
@@ -498,12 +498,12 @@ export function EmployeeDashboard({ currentUser, onNavigate }: EmployeeDashboard
                             {/* Due Date for Pending Assignments */}
                             {assignment.status === 'pending' && (
                               <div className="flex items-center space-x-2 text-sm">
-                                <Calendar className="w-4 h-4 text-gray-400" />
+                              <Calendar className="w-4 h-4 text-gray-400" />
                                 <span className="text-gray-600">Assignment Due:</span>
-                                <span className={dueDateInfo.color}>
-                                  {dueDateInfo.text}
-                                </span>
-                              </div>
+                              <span className={dueDateInfo.color}>
+                                {dueDateInfo.text}
+                              </span>
+                            </div>
                             )}
                             
                             {/* Review Date for Acknowledged Assignments */}
@@ -569,23 +569,23 @@ export function EmployeeDashboard({ currentUser, onNavigate }: EmployeeDashboard
                             View
                           </Button>
                           {assignment.status === 'pending' && (
-                            <Button 
-                              onClick={() => handleAcknowledgeAssignment(assignment)}
-                              disabled={isAcknowledging}
-                              className={overdue ? 'bg-red-600 hover:bg-red-700' : ''}
-                            >
-                              {isAcknowledging ? (
-                                <>
-                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                  Acknowledging...
-                                </>
-                              ) : (
-                                <>
-                                  <CheckCircle className="w-4 h-4 mr-2" />
-                                  Acknowledge
-                                </>
-                              )}
-                            </Button>
+                          <Button 
+                            onClick={() => handleAcknowledgeAssignment(assignment)}
+                            disabled={isAcknowledging}
+                            className={overdue ? 'bg-red-600 hover:bg-red-700' : ''}
+                          >
+                            {isAcknowledging ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Acknowledging...
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                Acknowledge
+                              </>
+                            )}
+                          </Button>
                           )}
                         </div>
                       </div>

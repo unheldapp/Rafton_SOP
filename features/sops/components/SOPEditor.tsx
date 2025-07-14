@@ -7,7 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Badge } from "../../../shared/components/ui/badge";
 import { Separator } from "../../../shared/components/ui/separator";
 import { Avatar, AvatarFallback } from "../../../shared/components/ui/avatar";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../shared/components/ui/dialog";
+import { WorkingCopyService } from "../../../shared/services/workingCopyService";
+import { useWorkingCopies } from "../../../shared/hooks/useWorkingCopies";
 import { 
   Save,
   Send,
@@ -45,7 +46,6 @@ import {
   Building2,
   Hash,
   Zap,
-  Upload,
   X,
   CheckCircle,
   AlertCircle,
@@ -109,8 +109,6 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
   const [isAutoSaving, setIsAutoSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [isDirty, setIsDirty] = useState(false);
-  const [showUploadDialog, setShowUploadDialog] = useState(false);
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [collaborators, setCollaborators] = useState<any[]>([]);
   const [comments, setComments] = useState<any[]>([]);
   const [versionHistory, setVersionHistory] = useState<any[]>([]);
@@ -124,18 +122,21 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
   const [organizationData, setOrganizationData] = useState<OrganizationData | null>(null);
   const [loadingOrganization, setLoadingOrganization] = useState(true);
 
+  // Working copy state management
+  const [existingWorkingCopy, setExistingWorkingCopy] = useState<any>(null);
+  const [isWorkingCopyMode, setIsWorkingCopyMode] = useState(false);
+  const workingCopyHook = useWorkingCopies();
+
   // Hooks
   const { 
     createSOP, 
     updateSOP, 
-    uploadSOPFile, 
     loading,
     publishSOP
   } = useSOPs();
   const { users } = useUsers();
   const editorRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const titleInputRef = useRef<HTMLInputElement>(null);
-  const autoSaveRef = useRef<NodeJS.Timeout>();
 
   // Focus title input on mount if it's a new SOP
   useEffect(() => {
@@ -147,97 +148,66 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
     }
   }, [sop?.id]);
 
-  // Auto-save functionality
-  const autoSave = useCallback(async () => {
-    if (!isDirty || isAutoSaving) return;
-
-    setIsAutoSaving(true);
-    try {
-      // Convert HTML content to plain text for database storage while preserving line breaks
-      const convertHTMLToText = (html: string) => {
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = html;
-        
-        // Replace HTML elements with line breaks to preserve formatting
-        const elements = tempDiv.querySelectorAll('*');
-        elements.forEach(element => {
-          if (['BR', 'P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(element.tagName)) {
-            element.replaceWith(element.textContent + '\n');
-          }
-        });
-        
-        return tempDiv.textContent || tempDiv.innerText || '';
-      };
-
-      // For single page documents, don't add page headers unless there are multiple pages
-      let fullContent: string;
-      if (pages.length === 1) {
-        const plainTextContent = convertHTMLToText(pages[0].content);
-        fullContent = plainTextContent;
-      } else {
-        fullContent = pages.map(page => {
-          const plainTextContent = convertHTMLToText(page.content);
-          return `### ${page.title}\n\n${plainTextContent}`;
-        }).join('\n\n--- Page Break ---\n\n');
-      }
-
-      if (currentSOPId) {
-        // Update existing SOP
-        await updateSOP(currentSOPId, {
-          title,
-          content: fullContent,
-          department: department || undefined,
-          priority,
-          categoryId: categoryId === 'none' ? undefined : categoryId,
-          folderId: currentFolderId || undefined
-        });
-      } else if (title.trim() && fullContent.trim()) {
-        // Create new SOP only if we don't have an existing ID
-        const newSOP = await createSOP({
-          title,
-          content: fullContent,
-          department: department || undefined,
-          priority,
-          categoryId: categoryId === 'none' ? undefined : categoryId,
-          folderId: currentFolderId || undefined
-        });
-        
-        // Set the new SOP ID to prevent creating duplicates
-        setCurrentSOPId(newSOP.id);
-        setHasBeenSavedOnce(true);
-      }
-      
-      setLastSaved(new Date());
-      setIsDirty(false);
-      toast.success('Changes saved automatically');
-    } catch (error) {
-      console.error('Auto-save failed:', error);
-      toast.error('Failed to save changes');
-    } finally {
-      setIsAutoSaving(false);
-    }
-  }, [currentSOPId, hasBeenSavedOnce, title, pages, department, priority, categoryId, isDirty, isAutoSaving, updateSOP, createSOP, currentFolderId]);
-
-  // Set up auto-save timer
+  // Working copy detection for published SOPs
   useEffect(() => {
-    if (isDirty) {
-      autoSaveRef.current = setTimeout(autoSave, 3000); // Auto-save after 3 seconds of inactivity
-    }
-    return () => {
-      if (autoSaveRef.current) {
-        clearTimeout(autoSaveRef.current);
+    const checkWorkingCopy = async () => {
+      if (sop?.id && sop.status === 'published') {
+        console.log('SOPEditor: Checking for working copy for SOP:', sop.id);
+        try {
+          const workingCopies = await workingCopyHook.fetchSOPWorkingCopies(sop.id);
+          console.log('SOPEditor: Found working copies:', workingCopies);
+          
+          const userWorkingCopy = workingCopies.find(wc => wc.user_id === currentUser.id);
+          console.log('SOPEditor: User working copy:', userWorkingCopy);
+          
+          if (userWorkingCopy) {
+            console.log('SOPEditor: Setting existing working copy:', userWorkingCopy);
+            setExistingWorkingCopy(userWorkingCopy);
+            // Let user decide whether to continue with working copy via the banner
+          } else {
+            console.log('SOPEditor: No working copy found, clearing state');
+            setExistingWorkingCopy(null);
+          }
+        } catch (error) {
+          console.error('SOPEditor: Working copy error:', error);
+          // If tables don't exist yet, gracefully handle
+          if (error instanceof Error && (error.message?.includes('relation') || error.message?.includes('table'))) {
+            console.log('SOPEditor: Working copy tables not yet created, skipping check');
+            setExistingWorkingCopy(null);
+          }
+        }
       }
     };
-  }, [isDirty, autoSave]);
 
-  // Load real data when SOP is provided
+    checkWorkingCopy();
+  }, [sop?.id, sop?.status, currentUser.id]);
+
+  // Debug: Log state changes
+  useEffect(() => {
+    console.log('SOPEditor: existingWorkingCopy state changed:', existingWorkingCopy);
+  }, [existingWorkingCopy]);
+
+  useEffect(() => {
+    console.log('SOPEditor: isWorkingCopyMode state changed:', isWorkingCopyMode);
+  }, [isWorkingCopyMode]);
+
+
+
+  // Load real data when SOP is provided (but not when in working copy mode)
   useEffect(() => {
     if (sop?.id) {
       setCurrentSOPId(sop.id);
       setHasBeenSavedOnce(true);
-      loadSOPData(sop.id);
+      
+      // Only load original SOP data if not in working copy mode
+      if (!isWorkingCopyMode) {
+        console.log('useEffect: Loading original SOP data (not in working copy mode)');
+        loadSOPData(sop.id);
+      } else {
+        console.log('useEffect: Skipping SOP data load (in working copy mode)');
+      }
     }
-  }, [sop?.id]);
+  }, [sop?.id, isWorkingCopyMode]);
 
   // Load organizational data on mount
   useEffect(() => {
@@ -279,15 +249,28 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
     setIsDirty(true);
   }, [title, pages, department, priority, categoryId, teamId]);
 
-  // Set editor content when page changes
+  // Set editor content when page changes OR when pages content changes
   useEffect(() => {
     const editor = editorRefs.current[currentPageId];
     if (editor) {
-      editor.innerHTML = pages.find(page => page.id === currentPageId)?.content || '';
+      const currentPage = pages.find(page => page.id === currentPageId);
+      const newContent = currentPage?.content || '';
+      // Only update if content actually changed to avoid cursor issues
+      if (editor.innerHTML !== newContent) {
+        editor.innerHTML = newContent;
+        console.log('Editor content synced for page:', currentPageId);
+      }
     }
-  }, [currentPageId]);
+  }, [currentPageId, pages]);
 
   const loadSOPData = async (sopId: string) => {
+    // Don't load original SOP data if user is in working copy mode
+    if (isWorkingCopyMode) {
+      console.log('loadSOPData: Skipping because user is in working copy mode');
+      return;
+    }
+    
+    console.log('loadSOPData: Loading original SOP data for', sopId);
     try {
       // Load real data from API
       const [collaboratorsData, commentsData, versionsData] = await Promise.all([
@@ -367,26 +350,242 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploadFile(file);
+  // Working copy functions
+  const createWorkingCopy = async () => {
+    if (!sop?.id) return;
     
     try {
-      if (sop?.id) {
-        // Upload file for existing SOP
-        await uploadSOPFile(file, sop.id);
-        toast.success('File uploaded successfully');
-      } else {
-        // Store file for new SOP creation
-        toast.success('File ready to upload with SOP');
-      }
+      const workingCopy = await workingCopyHook.createWorkingCopy({
+        sopId: sop.id,
+        title: sop.title,
+        content: sop.content,
+        description: sop.description || undefined
+      });
+      
+      setExistingWorkingCopy(workingCopy);
+      
+      // Load working copy data into editor state
+      loadWorkingCopyData(workingCopy);
+      
+      setIsWorkingCopyMode(true);
+      toast.success('Working copy created successfully');
     } catch (error) {
-      console.error('File upload failed:', error);
-      toast.error('Failed to upload file');
+      console.error('Error creating working copy:', error);
+      toast.error('Failed to create working copy');
     }
   };
+
+  const loadWorkingCopyData = (workingCopy: any) => {
+    console.log('Loading working copy data:', workingCopy);
+    
+    // Load title
+    setTitle(workingCopy.title || sop?.title || 'Untitled SOP');
+    
+    // Load department from changes or fallback to original SOP
+    // Working copy table doesn't have department field, it's stored in changes
+    const departmentFromChanges = workingCopy.changes?.department;
+    setDepartment(departmentFromChanges || sop?.department || '');
+    
+    // Load content and parse into pages
+    const content = workingCopy.content || '';
+    if (content) {
+      // Check if content has page breaks (multi-page format)
+      if (content.includes('\n\n--- Page Break ---\n\n')) {
+        const pageContents = content.split('\n\n--- Page Break ---\n\n');
+        const loadedPages = pageContents.map((pageContent: string, index: number) => {
+          const titleMatch = pageContent.match(/^### (.*)\n\n/);
+          const actualContent = titleMatch ? pageContent.replace(/^### .*\n\n/, '') : pageContent;
+          return {
+            id: `page-${index + 1}`,
+            title: titleMatch ? titleMatch[1] : `Page ${index + 1}`,
+            content: actualContent
+          };
+        });
+        setPages(loadedPages);
+        setCurrentPageId(loadedPages[0].id);
+      } else {
+        // Single page content - check if it has a header
+        const titleMatch = content.match(/^### (.*)\n\n/);
+        const pageContent = titleMatch ? content.replace(/^### .*\n\n/, '') : content;
+        const pageTitle = titleMatch ? titleMatch[1] : 'Page 1';
+        
+        setPages([{
+          id: 'page-1',
+          title: pageTitle,
+          content: pageContent
+        }]);
+        setCurrentPageId('page-1');
+      }
+    } else {
+      // Empty content - create default page
+      setPages([{
+        id: 'page-1',
+        title: 'Page 1',
+        content: ''
+      }]);
+      setCurrentPageId('page-1');
+    }
+    
+    // Reset dirty state since we just loaded fresh data
+    setIsDirty(false);
+    
+    // Set last saved time from working copy
+    if (workingCopy.updated_at) {
+      setLastSaved(new Date(workingCopy.updated_at));
+    }
+  };
+
+  const goToWorkingCopy = async () => {
+    if (!existingWorkingCopy) return;
+    
+    try {
+      // Fetch fresh working copy data from database to get latest changes
+      console.log('Fetching fresh working copy data:', existingWorkingCopy.id);
+      const freshWorkingCopy = await workingCopyHook.fetchWorkingCopyById(existingWorkingCopy.id);
+      
+      if (freshWorkingCopy) {
+        // Update cached state with fresh data
+        setExistingWorkingCopy(freshWorkingCopy);
+        
+        // Load fresh working copy data into editor state
+        loadWorkingCopyData(freshWorkingCopy);
+        
+        // Switch to working copy mode
+        setIsWorkingCopyMode(true);
+        toast.success('Opened existing working copy');
+      } else {
+        toast.error('Working copy not found');
+      }
+    } catch (error) {
+      console.error('Error fetching working copy:', error);
+      toast.error('Failed to load working copy');
+    }
+  };
+
+  const exitWorkingCopyMode = () => {
+    if (!sop) return;
+    
+    // Revert to original SOP data
+    setTitle(sop.title || 'Untitled SOP');
+    setDepartment(sop.department || '');
+    setPriority(sop.priority || 'medium');
+    setCategoryId(sop.category_id || 'none');
+    
+    let newPages: Page[] = [];
+    let newCurrentPageId = 'page-1';
+    
+    // Load original SOP content
+    if (sop.content) {
+      // Check if content has page breaks (multi-page format)
+      if (sop.content.includes('\n\n--- Page Break ---\n\n')) {
+        const pageContents = sop.content.split('\n\n--- Page Break ---\n\n');
+        newPages = pageContents.map((pageContent: string, index: number) => {
+          const titleMatch = pageContent.match(/^### (.*)\n\n/);
+          const actualContent = titleMatch ? pageContent.replace(/^### .*\n\n/, '') : pageContent;
+          return {
+            id: `page-${index + 1}`,
+            title: titleMatch ? titleMatch[1] : `Page ${index + 1}`,
+            content: actualContent
+          };
+        });
+        newCurrentPageId = newPages[0].id;
+      } else {
+        // Single page content - check if it has a header
+        const titleMatch = sop.content.match(/^### (.*)\n\n/);
+        const pageContent = titleMatch ? sop.content.replace(/^### .*\n\n/, '') : sop.content;
+        const pageTitle = titleMatch ? titleMatch[1] : 'Page 1';
+        
+        newPages = [{
+          id: 'page-1',
+          title: pageTitle,
+          content: pageContent
+        }];
+        newCurrentPageId = 'page-1';
+      }
+    } else {
+      // Empty content
+      newPages = [{
+        id: 'page-1',
+        title: 'Page 1',
+        content: ''
+      }];
+    }
+    
+    // Update state - the useEffect will automatically sync the editor content
+    setPages(newPages);
+    setCurrentPageId(newCurrentPageId);
+    
+    // Exit working copy mode
+    setIsWorkingCopyMode(false);
+    setIsDirty(false);
+    toast.success('Exited working copy mode');
+  };
+
+  const saveWorkingCopy = async () => {
+    if (!existingWorkingCopy?.id) return;
+    
+    try {
+      // Convert HTML content to plain text and combine all pages
+      const convertHTMLToText = (html: string) => {
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = html;
+        
+        // Replace HTML elements with line breaks to preserve formatting
+        const elements = tempDiv.querySelectorAll('*');
+        elements.forEach(element => {
+          if (['BR', 'P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(element.tagName)) {
+            element.replaceWith(element.textContent + '\n');
+          }
+        });
+        
+        return tempDiv.textContent || tempDiv.innerText || '';
+      };
+
+      // Combine all pages into a single content string
+      let fullContent: string;
+      if (pages.length === 1) {
+        const plainTextContent = convertHTMLToText(pages[0].content);
+        fullContent = plainTextContent;
+      } else {
+        fullContent = pages.map(page => {
+          const plainTextContent = convertHTMLToText(page.content);
+          return `### ${page.title}\n\n${plainTextContent}`;
+        }).join('\n\n--- Page Break ---\n\n');
+      }
+      
+      console.log('Saving working copy with content:', { title, fullContent, department });
+      
+      const updatedWorkingCopy = await workingCopyHook.updateWorkingCopy(existingWorkingCopy.id, {
+        title,
+        content: fullContent,
+        changes: {
+          // Store metadata about what changed
+          title_changed: title !== sop?.title,
+          content_changed: fullContent !== sop?.content,
+          department_changed: department !== sop?.department,
+          // Store actual values for fields not in the working copy table
+          department: department,
+          // Store original values for comparison
+          original_title: sop?.title,
+          original_content: sop?.content,
+          original_department: sop?.department
+        }
+      });
+      
+      // Update cached working copy state with fresh data from database
+      setExistingWorkingCopy(updatedWorkingCopy);
+      console.log('Updated cached working copy state');
+      
+      setIsDirty(false);
+      setLastSaved(new Date());
+      toast.success('Working copy saved successfully');
+    } catch (error) {
+      console.error('Error saving working copy:', error);
+      toast.error('Failed to save working copy');
+    }
+  };
+
+
 
   const handleManualSave = async () => {
     
@@ -397,13 +596,103 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
     
     setIsAutoSaving(true);
     try {
-      await autoSave();
-      toast.success('Document saved successfully');
+      if (isWorkingCopyMode) {
+        await saveWorkingCopy();
+        // Working copy save is handled in saveWorkingCopy function
+        // Don't continue to save to original SOP
+      } else {
+        // Manual save logic for regular SOPs
+        const convertHTMLToText = (html: string) => {
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = html;
+          
+          // Replace HTML elements with line breaks to preserve formatting
+          const elements = tempDiv.querySelectorAll('*');
+          elements.forEach(element => {
+            if (['BR', 'P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(element.tagName)) {
+              element.replaceWith(element.textContent + '\n');
+            }
+          });
+          
+          return tempDiv.textContent || tempDiv.innerText || '';
+        };
+
+        // For single page documents, don't add page headers unless there are multiple pages
+        let fullContent: string;
+        if (pages.length === 1) {
+          const plainTextContent = convertHTMLToText(pages[0].content);
+          fullContent = plainTextContent;
+        } else {
+          fullContent = pages.map(page => {
+            const plainTextContent = convertHTMLToText(page.content);
+            return `### ${page.title}\n\n${plainTextContent}`;
+          }).join('\n\n--- Page Break ---\n\n');
+        }
+
+        if (currentSOPId) {
+          // Update existing SOP
+          await updateSOP(currentSOPId, {
+            title,
+            content: fullContent,
+            department: department || undefined,
+            priority,
+            categoryId: categoryId === 'none' ? undefined : categoryId,
+            folderId: currentFolderId || undefined
+          });
+        } else if (title.trim() && fullContent.trim()) {
+          // Create new SOP only if we don't have an existing ID
+          const newSOP = await createSOP({
+            title,
+            content: fullContent,
+            department: department || undefined,
+            priority,
+            categoryId: categoryId === 'none' ? undefined : categoryId,
+            folderId: currentFolderId || undefined
+          });
+          
+          // Set the new SOP ID to prevent creating duplicates
+          setCurrentSOPId(newSOP.id);
+          setHasBeenSavedOnce(true);
+        }
+        
+        setLastSaved(new Date());
+        setIsDirty(false);
+        toast.success('Document saved successfully');
+      }
     } catch (error) {
       console.error('Manual save failed:', error);
       toast.error('Failed to save document');
     } finally {
       setIsAutoSaving(false);
+    }
+  };
+
+  const handleWorkingCopySubmitForReview = async () => {
+    if (!existingWorkingCopy?.id) return;
+    
+    try {
+      // First save the current changes
+      await saveWorkingCopy();
+      
+      // Then submit for review (for now, we'll use admin as reviewer)
+      const adminUsers = users.filter(u => u.role === 'admin');
+      const reviewerIds = adminUsers.map(u => u.id);
+      
+      if (reviewerIds.length === 0) {
+        toast.error('No admin users found to review');
+        return;
+      }
+      
+      await workingCopyHook.submitForReview(existingWorkingCopy.id, {
+        reviewers: reviewerIds,
+        summary: `Working copy submitted for review`
+      });
+      
+      toast.success('Working copy submitted for review');
+      onNavigate(getBackDestination());
+    } catch (error) {
+      console.error('Error submitting working copy for review:', error);
+      toast.error('Failed to submit working copy for review');
     }
   };
 
@@ -588,8 +877,13 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
   const getSaveStatusText = () => {
     if (isAutoSaving) return 'Saving...';
     if (lastSaved) return `Last saved: ${lastSaved.toLocaleTimeString()}`;
-    if (isDirty) return 'Unsaved changes';
-    return 'All changes saved';
+    return 'Not saved';
+  };
+
+  // Helper function to check if editing should be disabled
+  const isEditingDisabled = () => {
+    // Disable editing for published SOPs that are not in working copy mode
+    return sop?.status === 'published' && !isWorkingCopyMode;
   };
 
   const addPage = () => {
@@ -635,6 +929,72 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Working Copy Banner for Published SOPs */}
+      {sop?.status === 'published' && !isWorkingCopyMode && (
+        <div className="bg-gradient-to-r from-purple-50 to-violet-50 border-b border-purple-200 px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="flex-shrink-0">
+                <div className="w-8 h-8 bg-gradient-to-br from-purple-100 to-violet-100 rounded-full flex items-center justify-center shadow-sm">
+                  <FileText className="w-4 h-4 text-purple-600" />
+                </div>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-purple-900">
+                  This is a published SOP
+                </h3>
+                <p className="text-sm text-purple-700">
+                  {existingWorkingCopy 
+                    ? `You have unsaved changes in a working copy (last updated: ${new Date(existingWorkingCopy.updated_at).toLocaleDateString()}).`
+                    : 'To make changes, you need to create a working copy that can be reviewed and approved.'
+                  }
+                </p>
+              </div>
+            </div>
+            <Button 
+              onClick={existingWorkingCopy ? goToWorkingCopy : createWorkingCopy}
+              className="bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 text-white shadow-md transition-all duration-200"
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              {existingWorkingCopy ? 'Go to Working Copy' : 'Create Working Copy'}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Working Copy Mode Banner */}
+      {isWorkingCopyMode && existingWorkingCopy && (
+        <div className="bg-gradient-to-r from-pink-50 to-purple-50 border-b border-pink-200 px-6 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <div className="w-6 h-6 bg-gradient-to-br from-pink-100 to-purple-100 rounded-full flex items-center justify-center shadow-sm">
+                <FileText className="w-3 h-3 text-pink-600" />
+              </div>
+              <span className="text-sm font-medium text-pink-900">
+                Working Copy Mode
+              </span>
+              <span className="text-sm text-pink-700">
+                • You're editing a working copy of this published SOP
+              </span>
+            </div>
+            <div className="flex items-center space-x-4">
+              <div className="text-xs text-pink-600">
+                Created: {new Date(existingWorkingCopy.created_at).toLocaleDateString()}
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={exitWorkingCopyMode}
+                className="text-pink-700 border-pink-300 hover:bg-pink-100"
+              >
+                <X className="w-4 h-4 mr-2" />
+                Exit Working Copy
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="border-b border-gray-200 bg-white sticky top-0 z-10 shadow-sm">
         <div className="px-6 py-3">
@@ -670,6 +1030,7 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
                       e.preventDefault();
                     }
                   }}
+                  disabled={isEditingDisabled()}
                   className="border border-gray-200 px-3 py-1 text-lg font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white hover:border-gray-300 transition-colors min-w-[300px] rounded-md cursor-text"
                   placeholder="Untitled SOP"
                   type="text"
@@ -712,21 +1073,21 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
                   variant="outline" 
                   size="sm" 
                   onClick={handleManualSave} 
-                  disabled={!isDirty && hasBeenSavedOnce}
+                  disabled={isEditingDisabled() || (!isDirty && hasBeenSavedOnce)}
                   type="button"
                 >
                   <Save className="w-4 h-4 mr-2" />
-                  {hasBeenSavedOnce ? 'Save' : 'Save Document'}
+                  {isWorkingCopyMode ? 'Save Working Copy' : (hasBeenSavedOnce ? 'Save' : 'Save Document')}
                 </Button>
                 
-                {currentUser.role === 'admin' && (
-                  <Button variant="default" size="sm" onClick={handleDirectPublish} disabled={loading} type="button">
+                {currentUser.role === 'admin' && !isWorkingCopyMode && (
+                  <Button variant="default" size="sm" onClick={handleDirectPublish} disabled={isEditingDisabled() || loading} type="button">
                     <CheckCircle className="w-4 h-4 mr-2" />
                     Publish
                   </Button>
                 )}
                 
-                <Button variant="outline" size="sm" onClick={handleSubmitForReview} disabled={loading} type="button">
+                <Button variant="outline" size="sm" onClick={isWorkingCopyMode ? handleWorkingCopySubmitForReview : handleSubmitForReview} disabled={isEditingDisabled() || loading} type="button">
                   <Send className="w-4 h-4 mr-2" />
                   Submit for Review
                 </Button>
@@ -746,94 +1107,71 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
           {/* Enhanced Toolbar */}
           <div className="flex flex-wrap items-center gap-1 mt-3 py-2 border-t border-gray-100">
             <div className="flex items-center space-x-1">
-              {/* File Upload Button - Prominent */}
-              <div className="relative">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="h-8 px-3 bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100" 
-                  type="button"
-                  onClick={() => document.getElementById('file-upload-input')?.click()}
-                >
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload File
-                </Button>
-                <input
-                  id="file-upload-input"
-                  type="file"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                  accept=".pdf,.doc,.docx,.txt,.md"
-                />
-              </div>
-              
-              <Separator orientation="vertical" className="h-6 mx-2" />
-              
               {/* Formatting Tools */}
-              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('bold')} type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('bold')} disabled={isEditingDisabled()} type="button">
                 <Bold className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('italic')} type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('italic')} disabled={isEditingDisabled()} type="button">
                 <Italic className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('underline')} type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('underline')} disabled={isEditingDisabled()} type="button">
                 <Underline className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('strikeThrough')} type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('strikeThrough')} disabled={isEditingDisabled()} type="button">
                 <Strikethrough className="w-4 h-4" />
               </Button>
               <Separator orientation="vertical" className="h-6 mx-1" />
-              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('insertUnorderedList')} type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('insertUnorderedList')} disabled={isEditingDisabled()} type="button">
                 <List className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('insertOrderedList')} type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('insertOrderedList')} disabled={isEditingDisabled()} type="button">
                 <ListOrdered className="w-4 h-4" />
               </Button>
               <Separator orientation="vertical" className="h-6 mx-1" />
-              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('formatBlock', '<h1>')} type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('formatBlock', '<h1>')} disabled={isEditingDisabled()} type="button">
                 <Heading1 className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('formatBlock', '<h2>')} type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('formatBlock', '<h2>')} disabled={isEditingDisabled()} type="button">
                 <Heading2 className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('formatBlock', '<h3>')} type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('formatBlock', '<h3>')} disabled={isEditingDisabled()} type="button">
                 <Heading3 className="w-4 h-4" />
               </Button>
               <Separator orientation="vertical" className="h-6 mx-1" />
-              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('justifyLeft')} type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('justifyLeft')} disabled={isEditingDisabled()} type="button">
                 <AlignLeft className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('justifyCenter')} type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('justifyCenter')} disabled={isEditingDisabled()} type="button">
                 <AlignCenter className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('justifyRight')} type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('justifyRight')} disabled={isEditingDisabled()} type="button">
                 <AlignRight className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('justifyFull')} type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('justifyFull')} disabled={isEditingDisabled()} type="button">
                 <AlignJustify className="w-4 h-4" />
               </Button>
               <Separator orientation="vertical" className="h-6 mx-1" />
-              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('formatBlock', '<blockquote>')} type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('formatBlock', '<blockquote>')} disabled={isEditingDisabled()} type="button">
                 <Quote className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('formatBlock', '<pre>')} type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleFormat('formatBlock', '<pre>')} disabled={isEditingDisabled()} type="button">
                 <Code className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-2" type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" disabled={isEditingDisabled()} type="button">
                 <Table className="w-4 h-4" />
               </Button>
               <Separator orientation="vertical" className="h-6 mx-1" />
-              <Button variant="ghost" size="sm" className="h-8 px-2" type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" disabled={isEditingDisabled()} type="button">
                 <Image className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-2" type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" disabled={isEditingDisabled()} type="button">
                 <Paperclip className="w-4 h-4" />
               </Button>
               <Separator orientation="vertical" className="h-6 mx-1" />
-              <Button variant="ghost" size="sm" className="h-8 px-2" type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" disabled={isEditingDisabled()} type="button">
                 <MessageSquare className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="sm" className="h-8 px-2" type="button">
+              <Button variant="ghost" size="sm" className="h-8 px-2" disabled={isEditingDisabled()} type="button">
                 <AtSign className="w-4 h-4" />
               </Button>
             </div>
@@ -977,7 +1315,7 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
                   {pages.find(page => page.id === currentPageId) && (
                     <div 
                       ref={(el) => editorRefs.current[currentPageId] = el}
-                      contentEditable={true}
+                      contentEditable={!isEditingDisabled()}
                       suppressContentEditableWarning={true}
                       onInput={(e) => updatePageContent(currentPageId, e.currentTarget.innerHTML)}
                       className="w-full text-base leading-relaxed outline-none focus:outline-none min-h-screen prose prose-headings:font-bold prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-1 prose-blockquote:border-l-4 prose-blockquote:pl-4 prose-blockquote:italic prose-code:bg-gray-100 prose-code:px-1 prose-code:rounded prose-table:border-collapse prose-th:border prose-th:p-2 prose-td:border prose-td:p-2"
@@ -991,23 +1329,7 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
                     />
                   )}
                   
-                  {/* Upload File Display */}
-                  {uploadFile && (
-                    <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <Paperclip className="w-5 h-5 text-blue-600" />
-                          <div>
-                            <p className="font-medium text-blue-900">{uploadFile.name}</p>
-                            <p className="text-sm text-blue-700">{(uploadFile.size / 1024 / 1024).toFixed(2)} MB</p>
-                          </div>
-                        </div>
-                        <Button variant="ghost" size="sm" onClick={() => setUploadFile(null)} type="button">
-                          <X className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  )}
+
                 </div>
               </div>
             </div>
@@ -1046,7 +1368,7 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
                   <div className="space-y-4">
                     <div>
                       <Label className="text-sm font-medium text-gray-700">Department</Label>
-                      <Select value={department} onValueChange={setDepartment} disabled={loadingOrganization}>
+                      <Select value={department} onValueChange={setDepartment} disabled={isEditingDisabled() || loadingOrganization}>
                         <SelectTrigger className="mt-1">
                           <SelectValue placeholder="Select department" />
                         </SelectTrigger>
@@ -1063,7 +1385,7 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
 
                     <div>
                       <Label className="text-sm font-medium text-gray-700">Category</Label>
-                      <Select value={categoryId} onValueChange={setCategoryId} disabled={loadingOrganization}>
+                      <Select value={categoryId} onValueChange={setCategoryId} disabled={isEditingDisabled() || loadingOrganization}>
                         <SelectTrigger className="mt-1">
                           <SelectValue placeholder="Select category" />
                         </SelectTrigger>
@@ -1109,7 +1431,7 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
                     
                     <div>
                       <Label className="text-sm font-medium text-gray-700">Priority</Label>
-                      <Select value={priority} onValueChange={(value) => setPriority(value as 'low' | 'medium' | 'high' | 'critical')}>
+                      <Select value={priority} onValueChange={(value) => setPriority(value as 'low' | 'medium' | 'high' | 'critical')} disabled={isEditingDisabled()}>
                         <SelectTrigger className="mt-1">
                           <SelectValue />
                         </SelectTrigger>
@@ -1141,52 +1463,7 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
                     <Users className="w-4 h-4 text-gray-600" />
                     <h3 className="font-medium text-gray-900">Collaborators</h3>
                   </div>
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button variant="ghost" size="sm" type="button">
-                        <Plus className="w-4 h-4 mr-1" />
-                        <span className="text-sm text-blue-600">Add</span>
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-md">
-                      <DialogHeader>
-                        <DialogTitle>Add Collaborators</DialogTitle>
-                      </DialogHeader>
-                      <div className="space-y-3 max-h-96 overflow-y-auto">
-                        {organizationData?.users.map((user) => (
-                          <div key={user.id} className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50">
-                            <div className="flex items-center space-x-3">
-                              <Avatar className="w-8 h-8">
-                                <AvatarFallback className="bg-blue-500 text-white text-xs">
-                                  {user.first_name.charAt(0)}{user.last_name.charAt(0)}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <p className="text-sm font-medium">{user.first_name} {user.last_name}</p>
-                                <p className="text-xs text-gray-500">{user.department} • {user.position}</p>
-                              </div>
-                            </div>
-                            <Button 
-                              size="sm" 
-                              variant="outline"
-                              onClick={() => {
-                                // Add collaborator logic here
-                                toast.success(`${user.first_name} ${user.last_name} added as collaborator`);
-                              }}
-                              type="button"
-                            >
-                              Add
-                            </Button>
-                          </div>
-                        ))}
-                        {(!organizationData?.users || organizationData.users.length === 0) && (
-                          <p className="text-sm text-gray-500 text-center py-4">
-                            No users available
-                          </p>
-                        )}
-                      </div>
-                    </DialogContent>
-                  </Dialog>
+                  
                 </div>
                 
                 <div className="space-y-3">
