@@ -75,6 +75,7 @@ interface SOPEditorProps {
   template?: Template | null;
   onNavigate: (page: any, sop?: SOPWithDetails) => void;
   onSubmitForReview?: (sopId: string, changes: { title: string; content: string; department: string }) => void;
+  onWorkingCopySubmitForReview?: (originalSOP: any, workingCopy: any) => void;
   currentUser: UserType;
   currentFolderId?: string | null;
 }
@@ -85,7 +86,7 @@ interface Page {
   content: string;
 }
 
-export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, currentUser, currentFolderId }: SOPEditorProps) {
+export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, onWorkingCopySubmitForReview, currentUser, currentFolderId }: SOPEditorProps) {
   // State management
   const [title, setTitle] = useState(
     sop?.title || 
@@ -125,6 +126,7 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
   // Working copy state management
   const [existingWorkingCopy, setExistingWorkingCopy] = useState<any>(null);
   const [isWorkingCopyMode, setIsWorkingCopyMode] = useState(false);
+  const [isWorkingCopyLoading, setIsWorkingCopyLoading] = useState(false);
   const workingCopyHook = useWorkingCopies();
 
   // Hooks
@@ -136,6 +138,19 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
   } = useSOPs();
   const { users } = useUsers();
   const editorRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+
+  // Get author name from the users list
+  const getAuthorName = (authorId: string) => {
+    const author = users.find(user => user.id === authorId);
+    
+    if (author) {
+      const firstName = author.firstName || '';
+      const lastName = author.lastName || '';
+      return `${firstName} ${lastName}`.trim() || 'Unknown Author';
+    }
+    
+    return 'Unknown Author';
+  };
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   // Focus title input on mount if it's a new SOP
@@ -352,9 +367,11 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
 
   // Working copy functions
   const createWorkingCopy = async () => {
-    if (!sop?.id) return;
+    if (!sop?.id || isWorkingCopyLoading) return;
     
     try {
+      setIsWorkingCopyLoading(true);
+      
       const workingCopy = await workingCopyHook.createWorkingCopy({
         sopId: sop.id,
         title: sop.title,
@@ -372,6 +389,8 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
     } catch (error) {
       console.error('Error creating working copy:', error);
       toast.error('Failed to create working copy');
+    } finally {
+      setIsWorkingCopyLoading(false);
     }
   };
 
@@ -381,10 +400,17 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
     // Load title
     setTitle(workingCopy.title || sop?.title || 'Untitled SOP');
     
-    // Load department from changes or fallback to original SOP
-    // Working copy table doesn't have department field, it's stored in changes
+    // Load additional fields from changes or fallback to original SOP
+    // Working copy table doesn't have these fields, they're stored in changes
     const departmentFromChanges = workingCopy.changes?.department;
+    const priorityFromChanges = workingCopy.changes?.priority;
+    const categoryFromChanges = workingCopy.changes?.categoryId;
+    const teamFromChanges = workingCopy.changes?.teamId;
+    
     setDepartment(departmentFromChanges || sop?.department || '');
+    setPriority(priorityFromChanges || sop?.priority || 'medium');
+    setCategoryId(categoryFromChanges || sop?.category_id || 'none');
+    setTeamId(teamFromChanges || 'none');
     
     // Load content and parse into pages
     const content = workingCopy.content || '';
@@ -426,19 +452,24 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
       setCurrentPageId('page-1');
     }
     
-    // Reset dirty state since we just loaded fresh data
-    setIsDirty(false);
-    
     // Set last saved time from working copy
     if (workingCopy.updated_at) {
       setLastSaved(new Date(workingCopy.updated_at));
     }
+    
+        // Reset dirty state AFTER all state updates to prevent race conditions
+    // Use setTimeout to ensure this happens after other state updates
+    setTimeout(() => {
+      setIsDirty(false);
+    }, 0);
   };
 
   const goToWorkingCopy = async () => {
-    if (!existingWorkingCopy) return;
+    if (!existingWorkingCopy || isWorkingCopyLoading) return;
     
     try {
+      setIsWorkingCopyLoading(true);
+      
       // Fetch fresh working copy data from database to get latest changes
       console.log('Fetching fresh working copy data:', existingWorkingCopy.id);
       const freshWorkingCopy = await workingCopyHook.fetchWorkingCopyById(existingWorkingCopy.id);
@@ -459,6 +490,8 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
     } catch (error) {
       console.error('Error fetching working copy:', error);
       toast.error('Failed to load working copy');
+    } finally {
+      setIsWorkingCopyLoading(false);
     }
   };
 
@@ -529,16 +562,8 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
       const convertHTMLToText = (html: string) => {
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = html;
-        
-        // Replace HTML elements with line breaks to preserve formatting
-        const elements = tempDiv.querySelectorAll('*');
-        elements.forEach(element => {
-          if (['BR', 'P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(element.tagName)) {
-            element.replaceWith(element.textContent + '\n');
-          }
-        });
-        
-        return tempDiv.textContent || tempDiv.innerText || '';
+        // Use innerText for proper block element handling and whitespace preservation
+        return tempDiv.innerText || tempDiv.textContent || '';
       };
 
       // Combine all pages into a single content string
@@ -563,12 +588,21 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
           title_changed: title !== sop?.title,
           content_changed: fullContent !== sop?.content,
           department_changed: department !== sop?.department,
+          priority_changed: priority !== sop?.priority,
+          category_changed: categoryId !== (sop?.category_id || 'none'),
+          team_changed: teamId !== 'none', // teamId is always 'none' in original SOPs
           // Store actual values for fields not in the working copy table
           department: department,
+          priority: priority,
+          categoryId: categoryId,
+          teamId: teamId,
           // Store original values for comparison
           original_title: sop?.title,
           original_content: sop?.content,
-          original_department: sop?.department
+          original_department: sop?.department,
+          original_priority: sop?.priority,
+          original_category_id: sop?.category_id,
+          original_team_id: 'none' // SOPs don't have teams originally
         }
       });
       
@@ -605,16 +639,8 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
         const convertHTMLToText = (html: string) => {
           const tempDiv = document.createElement('div');
           tempDiv.innerHTML = html;
-          
-          // Replace HTML elements with line breaks to preserve formatting
-          const elements = tempDiv.querySelectorAll('*');
-          elements.forEach(element => {
-            if (['BR', 'P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(element.tagName)) {
-              element.replaceWith(element.textContent + '\n');
-            }
-          });
-          
-          return tempDiv.textContent || tempDiv.innerText || '';
+          // Use innerText for proper block element handling and whitespace preservation
+          return tempDiv.innerText || tempDiv.textContent || '';
         };
 
         // For single page documents, don't add page headers unless there are multiple pages
@@ -668,31 +694,62 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
   };
 
   const handleWorkingCopySubmitForReview = async () => {
-    if (!existingWorkingCopy?.id) return;
+    if (!existingWorkingCopy?.id || !sop?.id) return;
     
     try {
       // First save the current changes
       await saveWorkingCopy();
       
-      // Then submit for review (for now, we'll use admin as reviewer)
-      const adminUsers = users.filter(u => u.role === 'admin');
-      const reviewerIds = adminUsers.map(u => u.id);
+      // Prepare data for the submit review page
+      const originalSOP = {
+        id: sop.id,
+        title: sop.title,
+        content: sop.content,
+        department: sop.department,
+        version: sop.version,
+        author: sop.author_id || 'Unknown',
+        lastUpdated: new Date(sop.updated_at).toLocaleDateString(),
+        status: sop.status
+      };
       
-      if (reviewerIds.length === 0) {
-        toast.error('No admin users found to review');
-        return;
+      // Convert HTML content to plain text for working copy
+      const convertHTMLToText = (html: string) => {
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = html;
+        // Use innerText for proper block element handling and whitespace preservation
+        return tempDiv.innerText || tempDiv.textContent || '';
+      };
+
+      // For single page documents, don't add page headers unless there are multiple pages
+      let fullContent: string;
+      if (pages.length === 1) {
+        const plainTextContent = convertHTMLToText(pages[0].content);
+        fullContent = plainTextContent;
+      } else {
+        fullContent = pages.map(page => {
+          const plainTextContent = convertHTMLToText(page.content);
+          return `### ${page.title}\n\n${plainTextContent}`;
+        }).join('\n\n--- Page Break ---\n\n');
       }
       
-      await workingCopyHook.submitForReview(existingWorkingCopy.id, {
-        reviewers: reviewerIds,
-        summary: `Working copy submitted for review`
-      });
+      const workingCopyData = {
+        id: existingWorkingCopy.id,
+        title: title,
+        content: fullContent,
+        department: department,
+        changes: existingWorkingCopy.changes
+      };
       
-      toast.success('Working copy submitted for review');
-      onNavigate(getBackDestination());
+      // Navigate to the enhanced submit review page
+      if (onWorkingCopySubmitForReview) {
+        onWorkingCopySubmitForReview(originalSOP, workingCopyData);
+      } else {
+        toast.error('Working copy submit for review not implemented');
+      }
+      
     } catch (error) {
-      console.error('Error submitting working copy for review:', error);
-      toast.error('Failed to submit working copy for review');
+      console.error('Error preparing working copy for review:', error);
+      toast.error('Failed to prepare working copy for review');
     }
   };
 
@@ -701,16 +758,8 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
     const convertHTMLToText = (html: string) => {
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = html;
-      
-      // Replace HTML elements with line breaks to preserve formatting
-      const elements = tempDiv.querySelectorAll('*');
-      elements.forEach(element => {
-        if (['BR', 'P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(element.tagName)) {
-          element.replaceWith(element.textContent + '\n');
-        }
-      });
-      
-      return tempDiv.textContent || tempDiv.innerText || '';
+      // Use innerText for proper block element handling and whitespace preservation
+      return tempDiv.innerText || tempDiv.textContent || '';
     };
 
     // For single page documents, don't add page headers unless there are multiple pages
@@ -775,16 +824,8 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
       const convertHTMLToText = (html: string) => {
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = html;
-        
-        // Replace HTML elements with line breaks to preserve formatting
-        const elements = tempDiv.querySelectorAll('*');
-        elements.forEach(element => {
-          if (['BR', 'P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6'].includes(element.tagName)) {
-            element.replaceWith(element.textContent + '\n');
-          }
-        });
-        
-        return tempDiv.textContent || tempDiv.innerText || '';
+        // Use innerText for proper block element handling and whitespace preservation
+        return tempDiv.innerText || tempDiv.textContent || '';
       };
 
       // For single page documents, don't add page headers unless there are multiple pages
@@ -878,6 +919,26 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
     if (isAutoSaving) return 'Saving...';
     if (lastSaved) return `Last saved: ${lastSaved.toLocaleTimeString()}`;
     return 'Not saved';
+  };
+
+  // Helper function to check if Submit for Review should be enabled
+  const canSubmitForReview = () => {
+    // Basic checks
+    if (!sop) {
+      return false;
+    }
+    
+    if (isWorkingCopyLoading) {
+      return false;
+    }
+    
+    // If in working copy mode, always enable the button
+    if (isWorkingCopyMode) {
+      return true;
+    }
+    
+    // For non-working copy mode, use regular logic
+    return !isEditingDisabled();
   };
 
   // Helper function to check if editing should be disabled
@@ -1087,7 +1148,17 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
                   </Button>
                 )}
                 
-                <Button variant="outline" size="sm" onClick={isWorkingCopyMode ? handleWorkingCopySubmitForReview : handleSubmitForReview} disabled={isEditingDisabled() || loading} type="button">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={isWorkingCopyMode ? handleWorkingCopySubmitForReview : handleSubmitForReview}
+                  disabled={(() => {
+                    // In working copy mode, ignore the global loading state
+                    const shouldCheckGlobalLoading = !isWorkingCopyMode;
+                    return (shouldCheckGlobalLoading && loading) || isWorkingCopyLoading || !canSubmitForReview();
+                  })()} 
+                  type="button"
+                >
                   <Send className="w-4 h-4 mr-2" />
                   Submit for Review
                 </Button>
@@ -1284,7 +1355,7 @@ export function SOPEditor({ sop, template, onNavigate, onSubmitForReview, curren
                     </div>
                     <div className="flex items-center space-x-2">
                       <User className="w-4 h-4" />
-                      <span>Created by: {sop?.author ? `${sop.author.firstName} ${sop.author.lastName}` : `${currentUser.firstName} ${currentUser.lastName}`}</span>
+                      <span>Created by: {sop?.author_id ? getAuthorName(sop.author_id) : `${currentUser.firstName} ${currentUser.lastName}`}</span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <Hash className="w-4 h-4" />

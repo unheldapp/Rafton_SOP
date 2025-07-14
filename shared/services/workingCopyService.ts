@@ -375,16 +375,32 @@ export class WorkingCopyService {
 
     if (versionError) throw versionError;
 
-    // Update the main SOP
+    // Update the main SOP with all changes
+    const updateData: any = {
+      title: workingCopy.title,
+      content: workingCopy.content,
+      description: workingCopy.description,
+      version: newVersion,
+      updated_at: new Date().toISOString()
+    };
+
+    // Apply additional fields from changes if they exist
+    if (workingCopy.changes) {
+      if (workingCopy.changes.department !== undefined) {
+        updateData.department = workingCopy.changes.department;
+      }
+      if (workingCopy.changes.priority !== undefined) {
+        updateData.priority = workingCopy.changes.priority;
+      }
+      if (workingCopy.changes.categoryId !== undefined) {
+        updateData.category_id = workingCopy.changes.categoryId === 'none' ? null : workingCopy.changes.categoryId;
+      }
+      // Note: teamId is not stored in SOPs table as SOPs don't have teams
+    }
+
     const { data: updatedSOP, error: sopError } = await supabase
       .from('sops')
-      .update({
-        title: workingCopy.title,
-        content: workingCopy.content,
-        description: workingCopy.description,
-        version: newVersion,
-        updated_at: new Date().toISOString()
-      })
+      .update(updateData)
       .eq('id', workingCopy.sop_id)
       .select('*')
       .single();

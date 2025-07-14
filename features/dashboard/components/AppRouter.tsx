@@ -253,6 +253,12 @@ function AuthenticatedAppRouter({
     }
   };
 
+  // Handle working copy submit for review
+  const handlePrepareWorkingCopySubmitForReview = (originalSOP: any, workingCopy: any) => {
+    setPendingReviewData({ sop: originalSOP, workingCopy });
+    navigateTo('submit-review');
+  };
+
   // Handle final submit for review
   const handleFinalSubmitForReview = async (
     sopId: string, 
@@ -283,6 +289,7 @@ function AuthenticatedAppRouter({
             template={selectedTemplate}
             onNavigate={navigateTo}
             onSubmitForReview={handlePrepareSubmitForReview}
+            onWorkingCopySubmitForReview={handlePrepareWorkingCopySubmitForReview}
             currentUser={currentUser}
             currentFolderId={currentFolderId}
           />
@@ -321,11 +328,16 @@ function AuthenticatedAppRouter({
     return (
       <div className="min-h-screen bg-gray-50">
         <SOPSubmitReviewPage 
-          sop={pendingReviewData!.sop}
-          changes={pendingReviewData!.changes}
+          originalSOP={pendingReviewData!.sop}
+          workingCopy={pendingReviewData!.workingCopy}
           users={users}
           onNavigate={navigateTo}
-          onSubmitForReview={handleFinalSubmitForReview}
+          onSubmitForReview={(workingCopyId, reviewers, summary, version) => {
+            // Handle working copy submission
+            console.log('Submitting working copy for review:', { workingCopyId, reviewers, summary, version });
+            // For now, navigate back to SOPs page
+            navigateTo('sops');
+          }}
         />
       </div>
     );
