@@ -8,6 +8,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../shared/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../../shared/components/ui/tabs";
 import { ScrollArea } from "../../../shared/components/ui/scroll-area";
+import { useDocuments } from "../../../shared/hooks/useDocuments";
+import { EmployeeDocument } from "../../../shared/services/documentService";
+import { useAuth } from "../../../shared/context/AuthContext";
 import { 
   Search, 
   Filter, 
@@ -29,25 +32,11 @@ import {
   AlertTriangle,
   Info,
   ChevronRight,
-  ExternalLink
+  ExternalLink,
+  RefreshCw,
+  Loader2,
+  TrendingUp
 } from 'lucide-react';
-
-interface Document {
-  id: string;
-  title: string;
-  department: string;
-  type: 'SOP' | 'Policy' | 'Training' | 'Procedure' | 'Manual' | 'Guideline';
-  lastUpdated: string;
-  version: string;
-  author: string;
-  description: string;
-  content: string;
-  tags: string[];
-  status: 'published' | 'archived';
-  category: string;
-  fileSize?: string;
-  downloadUrl?: string;
-}
 
 interface AllDocumentsPageProps {
   currentUser: {
@@ -64,178 +53,52 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [tagFilter, setTagFilter] = useState<string>('all');
-  const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
+  const [selectedDocument, setSelectedDocument] = useState<EmployeeDocument | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table');
   const [sortBy, setSortBy] = useState<'title' | 'department' | 'lastUpdated' | 'type'>('lastUpdated');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  // Mock data - in real app, this would come from API
-  const allDocuments: Document[] = [
-    {
-      id: '1',
-      title: 'Chemical Handling Procedures',
-      department: 'Safety',
-      type: 'SOP',
-      lastUpdated: '2025-07-08',
-      version: '2.1',
-      author: 'John Smith',
-      description: 'Comprehensive procedures for safe handling, storage, and disposal of chemicals.',
-      content: 'This SOP establishes safety requirements for chemical handling in our facility...',
-      tags: ['Safety', 'Chemical', 'PPE', 'Storage'],
-      status: 'published',
-      category: 'Safety Procedures',
-      fileSize: '2.4 MB'
-    },
-    {
-      id: '2',
-      title: 'Emergency Response Plan',
-      department: 'Safety',
-      type: 'Policy',
-      lastUpdated: '2025-07-05',
-      version: '3.0',
-      author: 'Sarah Johnson',
-      description: 'Comprehensive emergency response procedures for workplace incidents.',
-      content: 'Emergency procedures for various workplace scenarios including fire, medical emergencies...',
-      tags: ['Emergency', 'Safety', 'Response', 'Critical'],
-      status: 'published',
-      category: 'Emergency Procedures',
-      fileSize: '3.1 MB'
-    },
-    {
-      id: '3',
-      title: 'Data Privacy Policy',
-      department: 'IT',
-      type: 'Policy',
-      lastUpdated: '2025-07-10',
-      version: '1.5',
-      author: 'Mike Brown',
-      description: 'Company data privacy and protection policies in compliance with regulations.',
-      content: 'Data privacy regulations and best practices for handling personal information...',
-      tags: ['Privacy', 'Data', 'Security', 'Compliance'],
-      status: 'published',
-      category: 'IT Policies',
-      fileSize: '1.8 MB'
-    },
-    {
-      id: '4',
-      title: 'Quality Control Standards',
-      department: 'QA',
-      type: 'Manual',
-      lastUpdated: '2025-07-01',
-      version: '1.2',
-      author: 'Emily Davis',
-      description: 'Quality control procedures and standards for manufacturing processes.',
-      content: 'Quality control standards and procedures for ensuring product quality...',
-      tags: ['Quality', 'Manufacturing', 'Standards', 'Testing'],
-      status: 'published',
-      category: 'Quality Management',
-      fileSize: '4.2 MB'
-    },
-    {
-      id: '5',
-      title: 'Workplace Harassment Policy',
-      department: 'HR',
-      type: 'Policy',
-      lastUpdated: '2025-06-28',
-      version: '2.0',
-      author: 'Lisa Chen',
-      description: 'Workplace harassment prevention and reporting procedures.',
-      content: 'Workplace harassment prevention and reporting procedures for all employees...',
-      tags: ['HR', 'Policy', 'Workplace', 'Conduct'],
-      status: 'published',
-      category: 'HR Policies',
-      fileSize: '1.5 MB'
-    },
-    {
-      id: '6',
-      title: 'Equipment Maintenance Manual',
-      department: 'Operations',
-      type: 'Manual',
-      lastUpdated: '2025-07-03',
-      version: '2.3',
-      author: 'Robert Wilson',
-      description: 'Complete guide for equipment maintenance and troubleshooting.',
-      content: 'Equipment maintenance procedures, schedules, and troubleshooting guides...',
-      tags: ['Equipment', 'Maintenance', 'Operations', 'Troubleshooting'],
-      status: 'published',
-      category: 'Operations',
-      fileSize: '8.7 MB'
-    },
-    {
-      id: '7',
-      title: 'Cybersecurity Training Module',
-      department: 'IT',
-      type: 'Training',
-      lastUpdated: '2025-07-12',
-      version: '1.0',
-      author: 'Alex Thompson',
-      description: 'Interactive cybersecurity awareness training for all employees.',
-      content: 'Cybersecurity best practices, threat awareness, and incident response...',
-      tags: ['Cybersecurity', 'Training', 'Awareness', 'Security'],
-      status: 'published',
-      category: 'Security Training',
-      fileSize: '5.3 MB'
-    },
-    {
-      id: '8',
-      title: 'Financial Reporting Procedures',
-      department: 'Finance',
-      type: 'Procedure',
-      lastUpdated: '2025-06-25',
-      version: '1.8',
-      author: 'Maria Rodriguez',
-      description: 'Standard procedures for financial reporting and documentation.',
-      content: 'Financial reporting procedures, documentation requirements, and compliance...',
-      tags: ['Finance', 'Reporting', 'Documentation', 'Compliance'],
-      status: 'published',
-      category: 'Financial Procedures',
-      fileSize: '2.9 MB'
-    },
-    {
-      id: '9',
-      title: 'New Employee Onboarding Guide',
-      department: 'HR',
-      type: 'Guideline',
-      lastUpdated: '2025-07-15',
-      version: '3.1',
-      author: 'Jennifer Lee',
-      description: 'Complete onboarding guide for new employees.',
-      content: 'New employee onboarding process, required training, and integration...',
-      tags: ['HR', 'Onboarding', 'New Employee', 'Integration'],
-      status: 'published',
-      category: 'HR Guidelines',
-      fileSize: '6.1 MB'
-    },
-    {
-      id: '10',
-      title: 'Environmental Compliance Manual',
-      department: 'Safety',
-      type: 'Manual',
-      lastUpdated: '2025-07-07',
-      version: '2.0',
-      author: 'David Park',
-      description: 'Environmental compliance requirements and procedures.',
-      content: 'Environmental regulations, compliance requirements, and reporting procedures...',
-      tags: ['Environmental', 'Compliance', 'Regulations', 'Reporting'],
-      status: 'published',
-      category: 'Environmental',
-      fileSize: '3.7 MB'
-    }
-  ];
+  // Get current user's company ID from AuthContext
+  const { currentUser: authUser } = useAuth();
+  const companyId = authUser?.company?.id || '';
+
+  console.log('AllDocumentsPage: authUser:', authUser);
+  console.log('AllDocumentsPage: companyId:', companyId);
+
+  // Use the real documents hook
+  const { 
+    documents, 
+    loading, 
+    error, 
+    stats, 
+    refreshDocuments, 
+    incrementViewCount, 
+    incrementDownloadCount 
+  } = useDocuments(companyId);
 
   // Get unique values for filters
-  const departments = [...new Set(allDocuments.map(doc => doc.department))];
-  const documentTypes = [...new Set(allDocuments.map(doc => doc.type))];
-  const allTags = [...new Set(allDocuments.flatMap(doc => doc.tags))];
+  const departments = useMemo(() => 
+    [...new Set(documents.map(doc => doc.department).filter(Boolean))], 
+    [documents]
+  );
+  const documentTypes = useMemo(() => 
+    [...new Set(documents.map(doc => doc.type))], 
+    [documents]
+  );
+  const allTags = useMemo(() => 
+    [...new Set(documents.flatMap(doc => doc.tags))], 
+    [documents]
+  );
 
   // Filter and search documents
   const filteredDocuments = useMemo(() => {
-    let filtered = allDocuments.filter(doc => {
+    let filtered = documents.filter(doc => {
       const matchesSearch = searchTerm === '' || 
         doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        doc.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        doc.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         doc.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        doc.author.toLowerCase().includes(searchTerm.toLowerCase());
+        doc.author.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        doc.author.lastName.toLowerCase().includes(searchTerm.toLowerCase());
       
       const matchesDepartment = departmentFilter === 'all' || doc.department === departmentFilter;
       const matchesType = typeFilter === 'all' || doc.type === typeFilter;
@@ -255,8 +118,8 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
           bValue = b.title.toLowerCase();
           break;
         case 'department':
-          aValue = a.department.toLowerCase();
-          bValue = b.department.toLowerCase();
+          aValue = (a.department || '').toLowerCase();
+          bValue = (b.department || '').toLowerCase();
           break;
         case 'lastUpdated':
           aValue = new Date(a.lastUpdated).getTime();
@@ -278,29 +141,7 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
     });
 
     return filtered;
-  }, [searchTerm, departmentFilter, typeFilter, tagFilter, sortBy, sortOrder]);
-
-  // Calculate summary statistics
-  const summaryStats = useMemo(() => {
-    const stats = {
-      total: allDocuments.length,
-      byDepartment: {} as Record<string, number>,
-      byType: {} as Record<string, number>,
-      recent: allDocuments.filter(doc => {
-        const lastUpdated = new Date(doc.lastUpdated);
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-        return lastUpdated >= thirtyDaysAgo;
-      }).length
-    };
-
-    allDocuments.forEach(doc => {
-      stats.byDepartment[doc.department] = (stats.byDepartment[doc.department] || 0) + 1;
-      stats.byType[doc.type] = (stats.byType[doc.type] || 0) + 1;
-    });
-
-    return stats;
-  }, []);
+  }, [documents, searchTerm, departmentFilter, typeFilter, tagFilter, sortBy, sortOrder]);
 
   const getTypeIcon = (type: string) => {
     const icons = {
@@ -326,7 +167,27 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
     return colors[type as keyof typeof colors] || 'bg-gray-100 text-gray-800';
   };
 
-  const DocumentViewer = ({ document }: { document: Document }) => {
+  const handleViewDocument = async (document: EmployeeDocument) => {
+    setSelectedDocument(document);
+    try {
+      await incrementViewCount(document.id);
+    } catch (error) {
+      console.error('Error incrementing view count:', error);
+    }
+  };
+
+  const handleDownloadDocument = async (document: EmployeeDocument) => {
+    try {
+      await incrementDownloadCount(document.id);
+      if (document.downloadUrl) {
+        window.open(document.downloadUrl, '_blank');
+      }
+    } catch (error) {
+      console.error('Error downloading document:', error);
+    }
+  };
+
+  const DocumentViewer = ({ document }: { document: EmployeeDocument }) => {
     const TypeIcon = getTypeIcon(document.type);
     
     return (
@@ -349,16 +210,18 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
           </div>
           
           <h1 className="text-2xl font-semibold text-gray-900 mb-2">{document.title}</h1>
-          <p className="text-gray-600 mb-4">{document.description}</p>
+          {document.description && (
+            <p className="text-gray-600 mb-4">{document.description}</p>
+          )}
           
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="flex items-center space-x-2 text-sm text-gray-600">
               <Building className="w-4 h-4" />
-              <span>{document.department}</span>
+              <span>{document.department || 'General'}</span>
             </div>
             <div className="flex items-center space-x-2 text-sm text-gray-600">
               <User className="w-4 h-4" />
-              <span>{document.author}</span>
+              <span>{document.author.firstName} {document.author.lastName}</span>
             </div>
             <div className="flex items-center space-x-2 text-sm text-gray-600">
               <Calendar className="w-4 h-4" />
@@ -366,50 +229,69 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
             </div>
             <div className="flex items-center space-x-2 text-sm text-gray-600">
               <FileText className="w-4 h-4" />
-              <span>{document.fileSize}</span>
+              <span>{document.fileSize || 'N/A'}</span>
+            </div>
+          </div>
+        </div>
+        
+        <div className="border-t pt-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Document Content</h2>
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2 text-sm text-gray-600">
+                <Eye className="w-4 h-4" />
+                <span>{document.viewCount} views</span>
+              </div>
+              <div className="flex items-center space-x-2 text-sm text-gray-600">
+                <Download className="w-4 h-4" />
+                <span>{document.downloadCount} downloads</span>
+              </div>
             </div>
           </div>
           
-          <div className="flex flex-wrap gap-2 mb-6">
-            {document.tags.map(tag => (
-              <Badge key={tag} variant="secondary" className="text-xs">
-                <Tag className="w-3 h-3 mr-1" />
-                {tag}
-              </Badge>
-            ))}
-          </div>
+          <ScrollArea className="h-96 border rounded-lg p-6">
+            <div className="prose max-w-none">
+              <div className="whitespace-pre-wrap text-sm text-gray-700">
+                {document.content}
+              </div>
+            </div>
+          </ScrollArea>
         </div>
         
-        <div className="bg-gray-50 rounded-lg p-6 mb-6">
-          <h3 className="font-medium text-gray-900 mb-3">Document Content</h3>
-          <div className="prose max-w-none">
-            <p className="text-gray-700 leading-relaxed">
-              {document.content}
-            </p>
+        {document.tags && document.tags.length > 0 && (
+          <div className="mt-6 pt-6 border-t">
+            <h3 className="text-sm font-medium text-gray-900 mb-3">Tags</h3>
+            <div className="flex flex-wrap gap-2">
+              {document.tags.map(tag => (
+                <Badge key={tag} variant="secondary" className="text-xs">
+                  {tag}
+                </Badge>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
         
-        <div className="flex justify-between items-center bg-purple-50 border border-purple-200 rounded-lg p-4">
-          <div className="flex items-center space-x-2">
-            <Info className="w-4 h-4 text-purple-600" />
-            <span className="text-sm font-medium text-purple-900">Reference Document</span>
-          </div>
-          <div className="flex space-x-3">
-            <Button variant="outline" size="sm">
-              <Download className="w-4 h-4 mr-2" />
-              Download PDF
-            </Button>
-            <Button variant="outline" size="sm">
-              <ExternalLink className="w-4 h-4 mr-2" />
-              Open in New Tab
-            </Button>
+        <div className="mt-6 pt-6 border-t">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-gray-600">
+              <p>Published: {document.publishedAt ? new Date(document.publishedAt).toLocaleDateString() : 'N/A'}</p>
+              {document.expiresAt && (
+                <p>Expires: {new Date(document.expiresAt).toLocaleDateString()}</p>
+              )}
+            </div>
+            {document.downloadUrl && (
+              <Button onClick={() => handleDownloadDocument(document)} className="bg-purple-600 hover:bg-purple-700">
+                <Download className="w-4 h-4 mr-2" />
+                Download PDF
+              </Button>
+            )}
           </div>
         </div>
       </div>
     );
   };
 
-  const DocumentCard = ({ document }: { document: Document }) => {
+  const DocumentCard = ({ document }: { document: EmployeeDocument }) => {
     const TypeIcon = getTypeIcon(document.type);
     
     return (
@@ -428,12 +310,14 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
           </div>
           
           <h3 className="font-medium text-gray-900 mb-2 line-clamp-2">{document.title}</h3>
-          <p className="text-sm text-gray-600 mb-3 line-clamp-2">{document.description}</p>
+          {document.description && (
+            <p className="text-sm text-gray-600 mb-3 line-clamp-2">{document.description}</p>
+          )}
           
           <div className="space-y-2 mb-4">
             <div className="flex items-center space-x-2 text-xs text-gray-500">
               <Building className="w-3 h-3" />
-              <span>{document.department}</span>
+              <span>{document.department || 'General'}</span>
             </div>
             <div className="flex items-center space-x-2 text-xs text-gray-500">
               <Calendar className="w-3 h-3" />
@@ -460,7 +344,7 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
                 variant="outline" 
                 size="sm" 
                 className="w-full"
-                onClick={() => setSelectedDocument(document)}
+                onClick={() => handleViewDocument(document)}
               >
                 <Eye className="w-4 h-4 mr-2" />
                 View Document
@@ -477,6 +361,39 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
       </Card>
     );
   };
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="p-8">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin text-purple-600 mx-auto mb-4" />
+            <p className="text-gray-600">Loading document library...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <AlertTriangle className="w-8 h-8 text-red-500 mx-auto mb-4" />
+            <p className="text-red-600 mb-4">Error loading documents</p>
+            <p className="text-gray-600 text-sm mb-4">{error}</p>
+            <Button onClick={refreshDocuments} variant="outline">
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Retry
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-8">
@@ -531,62 +448,69 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
                   ))}
                 </SelectContent>
               </Select>
+              <Button 
+                onClick={refreshDocuments}
+                variant="outline"
+                size="sm"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </Button>
             </div>
           </div>
         </div>
 
-        {/* Summary Statistics */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+        {/* Quick Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card>
-            <CardContent className="p-4">
+            <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">Total Documents</p>
-                  <p className="text-2xl font-bold text-gray-900">{summaryStats.total}</p>
+                  <p className="text-2xl font-bold text-purple-600">{stats.total}</p>
                 </div>
-                <FileText className="w-8 h-8 text-blue-600" />
+                <FileText className="w-8 h-8 text-purple-600" />
               </div>
             </CardContent>
           </Card>
           
           <Card>
-            <CardContent className="p-4">
+            <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">SOPs</p>
-                  <p className="text-2xl font-bold text-blue-600">{summaryStats.byType.SOP || 0}</p>
+                  <p className="text-sm font-medium text-gray-600">Recent Updates</p>
+                  <p className="text-2xl font-bold text-green-600">{stats.recent}</p>
                 </div>
-                <FileText className="w-8 h-8 text-blue-600" />
+                <TrendingUp className="w-8 h-8 text-green-600" />
               </div>
             </CardContent>
           </Card>
           
           <Card>
-            <CardContent className="p-4">
+            <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Policies</p>
-                  <p className="text-2xl font-bold text-purple-600">{summaryStats.byType.Policy || 0}</p>
+                  <p className="text-sm font-medium text-gray-600">Departments</p>
+                  <p className="text-2xl font-bold text-blue-600">{Object.keys(stats.byDepartment).length}</p>
                 </div>
-                <Shield className="w-8 h-8 text-purple-600" />
+                <Building className="w-8 h-8 text-blue-600" />
               </div>
             </CardContent>
           </Card>
           
           <Card>
-            <CardContent className="p-4">
+            <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Recently Updated</p>
-                  <p className="text-2xl font-bold text-emerald-600">{summaryStats.recent}</p>
+                  <p className="text-sm font-medium text-gray-600">Expiring Soon</p>
+                  <p className="text-2xl font-bold text-amber-600">{stats.expiringSoon}</p>
                 </div>
-                <Clock className="w-8 h-8 text-emerald-600" />
+                <Clock className="w-8 h-8 text-amber-600" />
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* View Mode Toggle and Sort */}
+        {/* View Mode and Sorting Controls */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
@@ -630,7 +554,7 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
             </div>
           </div>
           <div className="text-sm text-gray-600">
-            Showing {filteredDocuments.length} of {allDocuments.length} documents
+            Showing {filteredDocuments.length} of {documents.length} documents
           </div>
         </div>
 
@@ -674,7 +598,7 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
                           <TableCell>
                             <div className="flex items-center space-x-2">
                               <Building className="w-4 h-4 text-gray-400" />
-                              <span className="text-sm text-gray-900">{document.department}</span>
+                              <span className="text-sm text-gray-900">{document.department || 'General'}</span>
                             </div>
                           </TableCell>
                           <TableCell>
@@ -703,24 +627,36 @@ export function AllDocumentsPage({ currentUser }: AllDocumentsPageProps) {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Dialog>
-                              <DialogTrigger asChild>
+                            <div className="flex items-center space-x-2">
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm"
+                                    onClick={() => handleViewDocument(document)}
+                                  >
+                                    <Eye className="w-4 h-4 mr-2" />
+                                    View
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                                  <DialogHeader>
+                                    <DialogTitle>Document Library</DialogTitle>
+                                  </DialogHeader>
+                                  {selectedDocument && <DocumentViewer document={selectedDocument} />}
+                                </DialogContent>
+                              </Dialog>
+                              
+                              {document.downloadUrl && (
                                 <Button 
-                                  variant="outline" 
+                                  variant="ghost" 
                                   size="sm"
-                                  onClick={() => setSelectedDocument(document)}
+                                  onClick={() => handleDownloadDocument(document)}
                                 >
-                                  <Eye className="w-4 h-4 mr-2" />
-                                  View
+                                  <Download className="w-4 h-4" />
                                 </Button>
-                              </DialogTrigger>
-                              <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-                                <DialogHeader>
-                                  <DialogTitle>Document Library</DialogTitle>
-                                </DialogHeader>
-                                {selectedDocument && <DocumentViewer document={selectedDocument} />}
-                              </DialogContent>
-                            </Dialog>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       );

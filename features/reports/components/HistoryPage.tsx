@@ -23,223 +23,31 @@ import {
   ExternalLink,
   X,
   ChevronDown,
-  Archive
+  Archive,
+  Loader2
 } from 'lucide-react';
+import { useAuth } from "../../../shared/context/AuthContext";
+import { useHistory } from "../../../shared/hooks/useHistory";
+import { AcknowledgmentRecord } from "../../../shared/services/historyService";
 
-interface AcknowledgmentRecord {
-  id: string;
-  documentId: string;
-  documentTitle: string;
-  department: string;
-  acknowledgedDate: string;
-  version: string;
-  status: 'acknowledged' | 'expired' | 'superseded';
-  documentType: 'sop' | 'policy' | 'training' | 'procedure';
-  content: string;
-  currentVersion?: string;
-  supersededDate?: string;
-  expiryDate?: string;
-  acknowledgedBy: string;
-  receiptId: string;
-}
+export function HistoryPage() {
+  const { currentUser } = useAuth();
+  const {
+    filteredRecords,
+    stats,
+    departments,
+    loading,
+    error,
+    filters,
+    hasActiveFilters,
+    setFilters,
+    clearFilters,
+    downloadReceipt,
+    refreshHistory
+  } = useHistory(currentUser?.id || null);
 
-interface HistoryPageProps {
-  currentUser: {
-    id: string;
-    name: string;
-    email: string;
-    role: string;
-    department?: string;
-  };
-}
-
-export function HistoryPage({ currentUser }: HistoryPageProps) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [dateFilter, setDateFilter] = useState<string>('all');
-  const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [departmentFilter, setDepartmentFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedDocument, setSelectedDocument] = useState<AcknowledgmentRecord | null>(null);
   const [showDocumentDialog, setShowDocumentDialog] = useState(false);
-
-  // Mock acknowledgment history data
-  const [acknowledgmentHistory] = useState<AcknowledgmentRecord[]>([
-    {
-      id: '1',
-      documentId: 'doc-1',
-      documentTitle: 'Chemical Handling Procedures',
-      department: 'Safety',
-      acknowledgedDate: '2025-06-15T10:30:00Z',
-      version: '2.0',
-      status: 'acknowledged',
-      documentType: 'sop',
-      content: `# Chemical Handling Procedures v2.0\n\n## 1. Purpose and Scope\nThis Standard Operating Procedure (SOP) establishes the requirements for safe handling, storage, and disposal of chemicals in our facility.\n\n## 2. Personal Protective Equipment (PPE)\n### Required PPE:\n- Safety goggles or face shield\n- Chemical-resistant gloves (nitrile or neoprene)\n- Laboratory coat or chemical-resistant apron\n- Closed-toe shoes with chemical-resistant soles`,
-      acknowledgedBy: currentUser.name,
-      receiptId: 'RCP-2025-001'
-    },
-    {
-      id: '2',
-      documentId: 'doc-2',
-      documentTitle: 'Code of Conduct',
-      department: 'HR',
-      acknowledgedDate: '2025-05-02T14:15:00Z',
-      version: '1.2',
-      status: 'superseded',
-      documentType: 'policy',
-      content: `# Code of Conduct v1.2\n\n## Professional Behavior\nAll employees are expected to maintain the highest standards of professional conduct...`,
-      currentVersion: '2.0',
-      supersededDate: '2025-07-01',
-      acknowledgedBy: currentUser.name,
-      receiptId: 'RCP-2025-002'
-    },
-    {
-      id: '3',
-      documentId: 'doc-3',
-      documentTitle: 'Emergency Response Plan',
-      department: 'Safety',
-      acknowledgedDate: '2025-04-20T09:45:00Z',
-      version: '3.0',
-      status: 'acknowledged',
-      documentType: 'procedure',
-      content: `# Emergency Response Plan v3.0\n\n## Emergency Procedures\nIn case of emergency, follow these critical steps...`,
-      acknowledgedBy: currentUser.name,
-      receiptId: 'RCP-2025-003'
-    },
-    {
-      id: '4',
-      documentId: 'doc-4',
-      documentTitle: 'Data Privacy Training',
-      department: 'IT',
-      acknowledgedDate: '2025-03-10T16:20:00Z',
-      version: '1.0',
-      status: 'expired',
-      documentType: 'training',
-      content: `# Data Privacy Training v1.0\n\n## GDPR Compliance\nUnderstanding and implementing data privacy regulations...`,
-      expiryDate: '2025-07-10',
-      acknowledgedBy: currentUser.name,
-      receiptId: 'RCP-2025-004'
-    },
-    {
-      id: '5',
-      documentId: 'doc-5',
-      documentTitle: 'Workplace Harassment Policy',
-      department: 'HR',
-      acknowledgedDate: '2025-02-28T11:30:00Z',
-      version: '2.1',
-      status: 'acknowledged',
-      documentType: 'policy',
-      content: `# Workplace Harassment Policy v2.1\n\n## Zero Tolerance Policy\nOur organization maintains a zero-tolerance policy regarding harassment...`,
-      acknowledgedBy: currentUser.name,
-      receiptId: 'RCP-2025-005'
-    },
-    {
-      id: '6',
-      documentId: 'doc-6',
-      documentTitle: 'Equipment Maintenance Protocol',
-      department: 'Operations',
-      acknowledgedDate: '2025-01-15T13:45:00Z',
-      version: '1.5',
-      status: 'superseded',
-      documentType: 'sop',
-      content: `# Equipment Maintenance Protocol v1.5\n\n## Maintenance Procedures\nRegular maintenance is essential for equipment reliability and safety...`,
-      currentVersion: '2.0',
-      supersededDate: '2025-06-15',
-      acknowledgedBy: currentUser.name,
-      receiptId: 'RCP-2025-006'
-    },
-    {
-      id: '7',
-      documentId: 'doc-7',
-      documentTitle: 'Quality Control Standards',
-      department: 'QA',
-      acknowledgedDate: '2024-12-20T08:15:00Z',
-      version: '3.2',
-      status: 'acknowledged',
-      documentType: 'procedure',
-      content: `# Quality Control Standards v3.2\n\n## Quality Assurance Procedures\nMaintaining product quality through systematic controls...`,
-      acknowledgedBy: currentUser.name,
-      receiptId: 'RCP-2024-012'
-    },
-    {
-      id: '8',
-      documentId: 'doc-8',
-      documentTitle: 'Cybersecurity Awareness Training',
-      department: 'IT',
-      acknowledgedDate: '2024-11-30T15:00:00Z',
-      version: '2.3',
-      status: 'expired',
-      documentType: 'training',
-      content: `# Cybersecurity Awareness Training v2.3\n\n## Security Best Practices\nProtecting organizational data and systems from cyber threats...`,
-      expiryDate: '2025-05-30',
-      acknowledgedBy: currentUser.name,
-      receiptId: 'RCP-2024-011'
-    }
-  ]);
-
-  // Filter records based on current filters
-  const filteredRecords = useMemo(() => {
-    let filtered = acknowledgmentHistory;
-
-    // Search filter
-    if (searchTerm) {
-      filtered = filtered.filter(record =>
-        record.documentTitle.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        record.department.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
-
-    // Date filter
-    if (dateFilter !== 'all') {
-      const now = new Date();
-      const filterDate = new Date();
-
-      switch (dateFilter) {
-        case '30days':
-          filterDate.setDate(now.getDate() - 30);
-          break;
-        case '6months':
-          filterDate.setMonth(now.getMonth() - 6);
-          break;
-        case '1year':
-          filterDate.setFullYear(now.getFullYear() - 1);
-          break;
-      }
-
-      filtered = filtered.filter(record =>
-        new Date(record.acknowledgedDate) >= filterDate
-      );
-    }
-
-    // Type filter
-    if (typeFilter !== 'all') {
-      filtered = filtered.filter(record => record.documentType === typeFilter);
-    }
-
-    // Department filter
-    if (departmentFilter !== 'all') {
-      filtered = filtered.filter(record => record.department === departmentFilter);
-    }
-
-    // Status filter
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(record => record.status === statusFilter);
-    }
-
-    // Sort by acknowledged date (most recent first)
-    return filtered.sort((a, b) => 
-      new Date(b.acknowledgedDate).getTime() - new Date(a.acknowledgedDate).getTime()
-    );
-  }, [acknowledgmentHistory, searchTerm, dateFilter, typeFilter, departmentFilter, statusFilter]);
-
-  // Calculate statistics
-  const stats = useMemo(() => {
-    const total = acknowledgmentHistory.length;
-    const acknowledged = acknowledgmentHistory.filter(r => r.status === 'acknowledged').length;
-    const expired = acknowledgmentHistory.filter(r => r.status === 'expired').length;
-    const superseded = acknowledgmentHistory.filter(r => r.status === 'superseded').length;
-
-    return { total, acknowledged, expired, superseded };
-  }, [acknowledgmentHistory]);
 
   const getStatusBadge = (status: string) => {
     const config = {
@@ -247,7 +55,6 @@ export function HistoryPage({ currentUser }: HistoryPageProps) {
       expired: { color: 'bg-red-100 text-red-800 border-red-200', icon: AlertTriangle },
       superseded: { color: 'bg-amber-100 text-amber-800 border-amber-200', icon: RefreshCcw }
     };
-
     const { color, icon: Icon } = config[status as keyof typeof config];
     return (
       <Badge variant="outline" className={`${color} text-xs flex items-center gap-1`}>
@@ -283,38 +90,54 @@ export function HistoryPage({ currentUser }: HistoryPageProps) {
   };
 
   const handleDownloadReceipt = (record: AcknowledgmentRecord) => {
-    // Mock download functionality
-    const receipt = {
-      employeeName: currentUser.name,
-      employeeEmail: currentUser.email,
-      documentTitle: record.documentTitle,
-      version: record.version,
-      acknowledgedDate: formatDate(record.acknowledgedDate),
-      receiptId: record.receiptId,
-      department: record.department
-    };
-
-    const blob = new Blob([JSON.stringify(receipt, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `acknowledgment-receipt-${record.receiptId}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    if (currentUser?.email) {
+      downloadReceipt(record, currentUser.email);
+    }
   };
 
-  const clearFilters = () => {
-    setSearchTerm('');
-    setDateFilter('all');
-    setTypeFilter('all');
-    setDepartmentFilter('all');
-    setStatusFilter('all');
+  const handleSearchChange = (value: string) => {
+    setFilters({ searchTerm: value });
   };
 
-  const hasActiveFilters = searchTerm || dateFilter !== 'all' || typeFilter !== 'all' || 
-                         departmentFilter !== 'all' || statusFilter !== 'all';
+  const handleFilterChange = (filterType: string, value: string) => {
+    setFilters({ [filterType]: value });
+  };
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="p-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <Loader2 className="w-8 h-8 animate-spin text-purple-600 mx-auto mb-4" />
+              <p className="text-gray-600">Loading acknowledgment history...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <AlertTriangle className="w-8 h-8 text-red-600 mx-auto mb-4" />
+              <p className="text-red-600 mb-4">{error}</p>
+              <Button onClick={refreshHistory} variant="outline">
+                <RefreshCcw className="w-4 h-4 mr-2" />
+                Try Again
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-8">
@@ -333,8 +156,8 @@ export function HistoryPage({ currentUser }: HistoryPageProps) {
               <input
                 type="text"
                 placeholder="Search documents..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={filters.searchTerm || ''}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
               />
             </div>
@@ -401,10 +224,7 @@ export function HistoryPage({ currentUser }: HistoryPageProps) {
                 <CardTitle className="text-lg">Filters</CardTitle>
                 {hasActiveFilters && (
                   <Badge variant="secondary" className="ml-2">
-                    {[searchTerm, dateFilter !== 'all' ? dateFilter : '', 
-                      typeFilter !== 'all' ? typeFilter : '',
-                      departmentFilter !== 'all' ? departmentFilter : '',
-                      statusFilter !== 'all' ? statusFilter : ''].filter(Boolean).length} active
+                    {Object.values(filters).filter(f => f && f !== 'all').length} active
                   </Badge>
                 )}
               </div>
@@ -418,7 +238,7 @@ export function HistoryPage({ currentUser }: HistoryPageProps) {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Select value={dateFilter} onValueChange={setDateFilter}>
+              <Select value={filters.dateRange || 'all'} onValueChange={(value) => handleFilterChange('dateRange', value)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Date Range" />
                 </SelectTrigger>
@@ -430,7 +250,7 @@ export function HistoryPage({ currentUser }: HistoryPageProps) {
                 </SelectContent>
               </Select>
 
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <Select value={filters.documentType || 'all'} onValueChange={(value) => handleFilterChange('documentType', value)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Document Type" />
                 </SelectTrigger>
@@ -443,21 +263,19 @@ export function HistoryPage({ currentUser }: HistoryPageProps) {
                 </SelectContent>
               </Select>
 
-              <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+              <Select value={filters.department || 'all'} onValueChange={(value) => handleFilterChange('department', value)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Department" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Departments</SelectItem>
-                  <SelectItem value="Safety">Safety</SelectItem>
-                  <SelectItem value="HR">HR</SelectItem>
-                  <SelectItem value="IT">IT</SelectItem>
-                  <SelectItem value="Operations">Operations</SelectItem>
-                  <SelectItem value="QA">QA</SelectItem>
+                  {departments.map(dept => (
+                    <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
 
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <Select value={filters.status || 'all'} onValueChange={(value) => handleFilterChange('status', value)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
@@ -479,10 +297,14 @@ export function HistoryPage({ currentUser }: HistoryPageProps) {
               <div>
                 <CardTitle>Acknowledgment History</CardTitle>
                 <CardDescription>
-                  {filteredRecords.length} of {acknowledgmentHistory.length} records
+                  {filteredRecords.length} of {stats.total} records
                   {hasActiveFilters && ' (filtered)'}
                 </CardDescription>
               </div>
+              <Button variant="outline" onClick={refreshHistory} size="sm">
+                <RefreshCcw className="w-4 h-4 mr-2" />
+                Refresh
+              </Button>
             </div>
           </CardHeader>
           <CardContent>

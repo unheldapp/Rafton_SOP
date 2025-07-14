@@ -2,6 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { Button } from "../../../shared/components/ui/button";
 import { Badge } from "../../../shared/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../shared/components/ui/card";
+import { Alert, AlertDescription } from "../../../shared/components/ui/alert";
+import { useEmployeeDashboard } from "../../../shared/hooks/useEmployeeDashboard";
+import { EmployeeAssignment } from "../../../shared/services/assignmentService";
 import { 
   FileText, 
   Clock, 
@@ -15,27 +18,10 @@ import {
   Bell,
   TrendingUp,
   Award,
-  Target
+  Target,
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
-
-interface PendingDocument {
-  id: string;
-  title: string;
-  dueDate: string;
-  version: string;
-  priority: 'low' | 'medium' | 'high' | 'urgent';
-  department: string;
-  assignedDate: string;
-  documentType: 'sop' | 'policy' | 'training' | 'procedure';
-}
-
-interface RecentActivity {
-  id: string;
-  type: 'acknowledged' | 'reminder' | 'assigned';
-  message: string;
-  date: string;
-  documentTitle?: string;
-}
 
 interface EmployeeDashboardProps {
   currentUser: {
@@ -44,177 +30,77 @@ interface EmployeeDashboardProps {
     email: string;
     role: string;
     department?: string;
+    firstName?: string;
   };
   onNavigate: (page: string) => void;
 }
 
 export function EmployeeDashboard({ currentUser, onNavigate }: EmployeeDashboardProps) {
-  // Mock data for pending documents
-  const [pendingDocuments] = useState<PendingDocument[]>([
-    {
-      id: '1',
-      title: 'Chemical Handling Procedures',
-      dueDate: '2025-07-15T23:59:59Z',
-      version: '2.0',
-      priority: 'high',
-      department: 'Safety',
-      assignedDate: '2025-07-10T10:00:00Z',
-      documentType: 'sop'
-    },
-    {
-      id: '2',
-      title: 'Emergency Response Plan',
-      dueDate: '2025-07-12T23:59:59Z',
-      version: '3.0',
-      priority: 'urgent',
-      department: 'Safety',
-      assignedDate: '2025-07-08T14:30:00Z',
-      documentType: 'procedure'
-    },
-    {
-      id: '3',
-      title: 'Workplace Harassment Policy',
-      dueDate: '2025-07-20T23:59:59Z',
-      version: '2.1',
-      priority: 'medium',
-      department: 'HR',
-      assignedDate: '2025-07-09T09:15:00Z',
-      documentType: 'policy'
-    },
-    {
-      id: '4',
-      title: 'Data Privacy Training Module',
-      dueDate: '2025-07-08T23:59:59Z', // This one is overdue
-      version: '1.5',
-      priority: 'high',
-      department: 'IT',
-      assignedDate: '2025-07-01T16:00:00Z',
-      documentType: 'training'
-    }
-  ]);
-
-  // Mock data for recent activity
-  const [recentActivity] = useState<RecentActivity[]>([
-    {
-      id: '1',
-      type: 'acknowledged',
-      message: 'You acknowledged "Leave Policy" successfully',
-      date: '2025-07-06T15:30:00Z',
-      documentTitle: 'Leave Policy'
-    },
-    {
-      id: '2',
-      type: 'reminder',
-      message: 'Reminder: "Emergency Response Plan" is due in 2 days',
-      date: '2025-07-10T09:00:00Z',
-      documentTitle: 'Emergency Response Plan'
-    },
-    {
-      id: '3',
-      type: 'assigned',
-      message: 'New document assigned: "Chemical Handling Procedures"',
-      date: '2025-07-10T10:00:00Z',
-      documentTitle: 'Chemical Handling Procedures'
-    },
-    {
-      id: '4',
-      type: 'acknowledged',
-      message: 'You acknowledged "Code of Conduct" successfully',
-      date: '2025-07-05T11:20:00Z',
-      documentTitle: 'Code of Conduct'
-    },
-    {
-      id: '5',
-      type: 'reminder',
-      message: 'Reminder: "Workplace Harassment Policy" is due in 10 days',
-      date: '2025-07-10T08:00:00Z',
-      documentTitle: 'Workplace Harassment Policy'
-    }
-  ]);
-
-  // Calculate summary statistics
-  const summaryStats = useMemo(() => {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    const pending = pendingDocuments.length;
-    const overdue = pendingDocuments.filter(doc => new Date(doc.dueDate) < now).length;
-    
-    // Mock acknowledged this month (would come from API in real app)
-    const acknowledgedThisMonth = 7;
-    
-    return { pending, overdue, acknowledgedThisMonth };
-  }, [pendingDocuments]);
+  const { data, loading, error, refreshData, acknowledgeAssignment } = useEmployeeDashboard();
+  const [acknowledging, setAcknowledging] = useState<string | null>(null);
 
   const isOverdue = (dueDate: string) => {
     return new Date(dueDate) < new Date();
   };
 
   const getDaysUntilDue = (dueDate: string) => {
+    const today = new Date();
     const due = new Date(dueDate);
-    const now = new Date();
-    const diffTime = due.getTime() - now.getTime();
+    const diffTime = due.getTime() - today.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays;
   };
 
   const getPriorityColor = (priority: string) => {
-    const colors = {
-      urgent: 'bg-red-100 text-red-800 border-red-200',
-      high: 'bg-orange-100 text-orange-800 border-orange-200',
-      medium: 'bg-blue-100 text-blue-800 border-blue-200',
-      low: 'bg-gray-100 text-gray-800 border-gray-200'
-    };
-    return colors[priority as keyof typeof colors] || colors.medium;
+    switch (priority) {
+      case 'urgent': return 'border-red-500 text-red-700 bg-red-50';
+      case 'high': return 'border-orange-500 text-orange-700 bg-orange-50';
+      case 'medium': return 'border-yellow-500 text-yellow-700 bg-yellow-50';
+      case 'low': return 'border-green-500 text-green-700 bg-green-50';
+      default: return 'border-gray-500 text-gray-700 bg-gray-50';
+    }
   };
 
   const getActivityIcon = (type: string) => {
-    const icons = {
-      acknowledged: CheckCircle,
-      reminder: Bell,
-      assigned: FileText
-    };
-    return icons[type as keyof typeof icons] || Activity;
+    switch (type) {
+      case 'acknowledged': return CheckCircle;
+      case 'reminder': return Bell;
+      case 'assigned': return FileText;
+      case 'notification': return Bell;
+      default: return Activity;
+    }
   };
 
   const getActivityColor = (type: string) => {
-    const colors = {
-      acknowledged: 'text-emerald-600 bg-emerald-50',
-      reminder: 'text-amber-600 bg-amber-50',
-      assigned: 'text-blue-600 bg-blue-50'
-    };
-    return colors[type as keyof typeof colors] || 'text-gray-600 bg-gray-50';
+    switch (type) {
+      case 'acknowledged': return 'bg-emerald-50 text-emerald-600';
+      case 'reminder': return 'bg-amber-50 text-amber-600';
+      case 'assigned': return 'bg-blue-50 text-blue-600';
+      case 'notification': return 'bg-purple-50 text-purple-600';
+      default: return 'bg-gray-50 text-gray-600';
+    }
   };
 
   const formatDueDate = (dueDate: string) => {
-    const daysUntil = getDaysUntilDue(dueDate);
-    const date = new Date(dueDate);
+    if (!dueDate) return { text: 'No due date', color: 'text-gray-500' };
     
-    if (daysUntil < 0) {
+    const overdue = isOverdue(dueDate);
+    const daysUntilDue = getDaysUntilDue(dueDate);
+    
+    if (overdue) {
+      const daysPast = Math.abs(daysUntilDue);
       return {
-        text: `Overdue by ${Math.abs(daysUntil)} day${Math.abs(daysUntil) !== 1 ? 's' : ''}`,
-        color: 'text-red-600 font-medium'
+        text: `Overdue by ${daysPast} day${daysPast !== 1 ? 's' : ''}`,
+        color: 'text-red-600'
       };
-    } else if (daysUntil === 0) {
-      return {
-        text: 'Due today',
-        color: 'text-red-600 font-medium'
-      };
-    } else if (daysUntil === 1) {
-      return {
-        text: 'Due tomorrow',
-        color: 'text-amber-600 font-medium'
-      };
-    } else if (daysUntil <= 3) {
-      return {
-        text: `Due in ${daysUntil} days`,
-        color: 'text-amber-600'
-      };
+    } else if (daysUntilDue === 0) {
+      return { text: 'Due today', color: 'text-red-600' };
+    } else if (daysUntilDue === 1) {
+      return { text: 'Due tomorrow', color: 'text-amber-600' };
+    } else if (daysUntilDue <= 7) {
+      return { text: `Due in ${daysUntilDue} days`, color: 'text-amber-600' };
     } else {
-      return {
-        text: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        color: 'text-gray-600'
-      };
+      return { text: `Due in ${daysUntilDue} days`, color: 'text-gray-600' };
     }
   };
 
@@ -224,8 +110,7 @@ export function EmployeeDashboard({ currentUser, onNavigate }: EmployeeDashboard
     const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
     
     if (diffInHours < 1) {
-      const diffInMinutes = Math.floor(diffInHours * 60);
-      return `${diffInMinutes} minute${diffInMinutes !== 1 ? 's' : ''} ago`;
+      return 'Just now';
     } else if (diffInHours < 24) {
       const hours = Math.floor(diffInHours);
       return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
@@ -236,9 +121,77 @@ export function EmployeeDashboard({ currentUser, onNavigate }: EmployeeDashboard
     }
   };
 
-  const displayedPendingDocs = pendingDocuments.slice(0, 8);
-  const hasMorePending = pendingDocuments.length > 8;
+  const handleAcknowledgeAssignment = async (assignment: EmployeeAssignment) => {
+    try {
+      setAcknowledging(assignment.id);
+      await acknowledgeAssignment(assignment.id, assignment.sopId, assignment.sopVersion);
+      // The hook will automatically refresh the data
+    } catch (err) {
+      console.error('Error acknowledging assignment:', err);
+      // Handle error (could show toast notification)
+    } finally {
+      setAcknowledging(null);
+    }
+  };
 
+  const handleRefresh = async () => {
+    await refreshData();
+  };
+
+  if (loading) {
+    return (
+      <div className="p-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-center h-64">
+            <div className="flex items-center space-x-2">
+              <Loader2 className="w-6 h-6 animate-spin" />
+              <span className="text-gray-600">Loading dashboard...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="max-w-7xl mx-auto">
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              Error loading dashboard: {error}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleRefresh}
+                className="ml-2"
+              >
+                <RefreshCw className="w-4 h-4 mr-1" />
+                Retry
+              </Button>
+            </AlertDescription>
+          </Alert>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="p-8">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center py-8">
+            <p className="text-gray-500">No dashboard data available</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const { stats, pendingAssignments, recentActivity } = data;
+  const displayedPendingDocs = pendingAssignments.slice(0, 8);
+  const hasMorePending = pendingAssignments.length > 8;
   const displayedActivity = recentActivity.slice(0, 5);
 
   return (
@@ -246,16 +199,22 @@ export function EmployeeDashboard({ currentUser, onNavigate }: EmployeeDashboard
       <div className="max-w-7xl mx-auto">
         {/* Welcome Header */}
         <div className="mb-8">
-          <div className="flex items-center space-x-3 mb-2">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <User className="w-6 h-6 text-purple-600" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <User className="w-6 h-6 text-purple-600" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-semibold text-gray-900">
+                  Welcome back, {currentUser.firstName || currentUser.name}!
+                </h1>
+                <p className="text-gray-600">Here's what needs your attention today</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl font-semibold text-gray-900">
-                Welcome back, {currentUser.firstName}!
-              </h1>
-              <p className="text-gray-600">Here's what needs your attention today</p>
-            </div>
+            <Button variant="outline" onClick={handleRefresh} disabled={loading}>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh
+            </Button>
           </div>
         </div>
 
@@ -267,8 +226,8 @@ export function EmployeeDashboard({ currentUser, onNavigate }: EmployeeDashboard
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600 mb-1">Pending Acknowledgments</p>
-                  <p className="text-3xl font-bold text-amber-600">{summaryStats.pending}</p>
-                  <p className="text-sm text-gray-500 mt-1">Document{summaryStats.pending !== 1 ? 's' : ''} waiting</p>
+                  <p className="text-3xl font-bold text-amber-600">{stats.pendingAssignments}</p>
+                  <p className="text-sm text-gray-500 mt-1">Document{stats.pendingAssignments !== 1 ? 's' : ''} waiting</p>
                 </div>
                 <div className="p-3 bg-amber-50 rounded-full">
                   <Clock className="w-8 h-8 text-amber-600" />
@@ -283,7 +242,7 @@ export function EmployeeDashboard({ currentUser, onNavigate }: EmployeeDashboard
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600 mb-1">Acknowledged This Month</p>
-                  <p className="text-3xl font-bold text-emerald-600">{summaryStats.acknowledgedThisMonth}</p>
+                  <p className="text-3xl font-bold text-emerald-600">{stats.acknowledgedThisMonth}</p>
                   <p className="text-sm text-gray-500 mt-1">Great progress!</p>
                 </div>
                 <div className="p-3 bg-emerald-50 rounded-full">
@@ -293,14 +252,14 @@ export function EmployeeDashboard({ currentUser, onNavigate }: EmployeeDashboard
             </CardContent>
           </Card>
 
-          {/* Overdue (only show if > 0) */}
-          {summaryStats.overdue > 0 && (
+          {/* Overdue or Compliance Status */}
+          {stats.overdueAssignments > 0 ? (
             <Card className="hover:shadow-lg transition-shadow cursor-pointer border-red-200" onClick={() => onNavigate('assigned')}>
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600 mb-1">Overdue Documents</p>
-                    <p className="text-3xl font-bold text-red-600">{summaryStats.overdue}</p>
+                    <p className="text-3xl font-bold text-red-600">{stats.overdueAssignments}</p>
                     <p className="text-sm text-red-500 mt-1">Needs immediate attention</p>
                   </div>
                   <div className="p-3 bg-red-50 rounded-full">
@@ -309,17 +268,16 @@ export function EmployeeDashboard({ currentUser, onNavigate }: EmployeeDashboard
                 </div>
               </CardContent>
             </Card>
-          )}
-
-          {/* If no overdue, show compliance score */}
-          {summaryStats.overdue === 0 && (
+          ) : (
             <Card className="hover:shadow-lg transition-shadow cursor-pointer border-emerald-200">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-gray-600 mb-1">Compliance Status</p>
-                    <p className="text-3xl font-bold text-emerald-600">100%</p>
-                    <p className="text-sm text-emerald-500 mt-1">All up to date!</p>
+                    <p className="text-3xl font-bold text-emerald-600">{Math.round(stats.complianceRate)}%</p>
+                    <p className="text-sm text-emerald-500 mt-1">
+                      {stats.complianceRate === 100 ? 'All up to date!' : 'Good progress!'}
+                    </p>
                   </div>
                   <div className="p-3 bg-emerald-50 rounded-full">
                     <Award className="w-8 h-8 text-emerald-600" />
@@ -341,7 +299,7 @@ export function EmployeeDashboard({ currentUser, onNavigate }: EmployeeDashboard
                 </CardTitle>
                 <CardDescription>
                   Documents requiring your acknowledgment
-                  {summaryStats.pending > 0 && ` (${summaryStats.pending} pending)`}
+                  {stats.pendingAssignments > 0 && ` (${stats.pendingAssignments} pending)`}
                 </CardDescription>
               </div>
               {hasMorePending && (
@@ -355,13 +313,14 @@ export function EmployeeDashboard({ currentUser, onNavigate }: EmployeeDashboard
           <CardContent>
             {displayedPendingDocs.length > 0 ? (
               <div className="space-y-4">
-                {displayedPendingDocs.map((doc) => {
-                  const dueDateInfo = formatDueDate(doc.dueDate);
-                  const overdue = isOverdue(doc.dueDate);
+                {displayedPendingDocs.map((assignment) => {
+                  const dueDateInfo = formatDueDate(assignment.dueDate);
+                  const overdue = assignment.dueDate && isOverdue(assignment.dueDate);
+                  const isAcknowledging = acknowledging === assignment.id;
                   
                   return (
                     <div 
-                      key={doc.id}
+                      key={assignment.id}
                       className={`p-4 rounded-lg border transition-all hover:shadow-md ${
                         overdue ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-white hover:bg-gray-50'
                       }`}
@@ -374,15 +333,15 @@ export function EmployeeDashboard({ currentUser, onNavigate }: EmployeeDashboard
                             </div>
                             <div className="flex-1 min-w-0">
                               <h4 className="font-medium text-gray-900 truncate">
-                                {doc.title}
+                                {assignment.sopTitle}
                               </h4>
                               <div className="flex items-center space-x-4 mt-1">
-                                <span className="text-sm text-gray-500">{doc.department}</span>
+                                <span className="text-sm text-gray-500">{assignment.department}</span>
                                 <Badge variant="outline" className="text-xs">
-                                  v{doc.version}
+                                  v{assignment.sopVersion}
                                 </Badge>
-                                <Badge variant="outline" className={`text-xs ${getPriorityColor(doc.priority)}`}>
-                                  {doc.priority.charAt(0).toUpperCase() + doc.priority.slice(1)}
+                                <Badge variant="outline" className={`text-xs ${getPriorityColor(assignment.priority)}`}>
+                                  {assignment.priority.charAt(0).toUpperCase() + assignment.priority.slice(1)}
                                 </Badge>
                               </div>
                             </div>
@@ -398,13 +357,30 @@ export function EmployeeDashboard({ currentUser, onNavigate }: EmployeeDashboard
                           </div>
                         </div>
                         
-                        <div className="ml-4">
+                        <div className="ml-4 flex space-x-2">
                           <Button 
+                            variant="outline"
                             onClick={() => onNavigate('assigned')}
-                            className={overdue ? 'bg-red-600 hover:bg-red-700' : ''}
                           >
                             <Eye className="w-4 h-4 mr-2" />
-                            {overdue ? 'Review Now' : 'View & Acknowledge'}
+                            View
+                          </Button>
+                          <Button 
+                            onClick={() => handleAcknowledgeAssignment(assignment)}
+                            disabled={isAcknowledging}
+                            className={overdue ? 'bg-red-600 hover:bg-red-700' : ''}
+                          >
+                            {isAcknowledging ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Acknowledging...
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                Acknowledge
+                              </>
+                            )}
                           </Button>
                         </div>
                       </div>
@@ -455,16 +431,18 @@ export function EmployeeDashboard({ currentUser, onNavigate }: EmployeeDashboard
               })}
             </div>
             
-            <div className="mt-4 pt-4 border-t">
-              <Button 
-                variant="ghost" 
-                className="w-full"
-                onClick={() => onNavigate('history')}
-              >
-                View Full History
-                <ChevronRight className="w-4 h-4 ml-1" />
-              </Button>
-            </div>
+            {recentActivity.length > 5 && (
+              <div className="mt-4 pt-4 border-t">
+                <Button 
+                  variant="ghost" 
+                  className="w-full"
+                  onClick={() => onNavigate('history')}
+                >
+                  View Full History
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

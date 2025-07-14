@@ -1,2 +1,10 @@
 export { useSOPs } from './useSOPs';
-export { useUsers } from './useUsers'; 
+export { useUsers } from './useUsers';
+export { useEmployeeDashboard } from './useEmployeeDashboard';
+export { useAssignments } from './useAssignments';
+export { useNotifications } from './useNotifications';
+export { useDashboard } from './useDashboard';
+export { useHistory } from './useHistory';
+export { useDocuments } from './useDocuments';
+export { useSettings } from './useSettings';
+export { useReports } from './useReports'; 

@@ -20,153 +20,32 @@ import {
   User,
   Building,
   Trash2,
-  Archive
+  Archive,
+  Loader2
 } from 'lucide-react';
+import { useAuth } from "../../../shared/context/AuthContext";
+import { useNotifications } from "../../../shared/hooks/useNotifications";
+import { Notification } from "../../../shared/services/notificationService";
 
-interface Notification {
-  id: string;
-  type: 'assigned' | 'reminder' | 'updated' | 'deadline' | 'general';
-  title: string;
-  message: string;
-  date: string;
-  isRead: boolean;
-  documentId?: string;
-  documentTitle?: string;
-  priority: 'low' | 'medium' | 'high' | 'urgent';
-  sender?: string;
-  dueDate?: string;
-}
-
-interface NotificationsPageProps {
-  currentUser: {
-    id: string;
-    name: string;
-    email: string;
-    role: string;
-    department?: string;
-  };
-}
-
-export function NotificationsPage({ currentUser }: NotificationsPageProps) {
-  const [notifications, setNotifications] = useState<Notification[]>([
-    {
-      id: '1',
-      type: 'assigned',
-      title: 'New SOP Assigned',
-      message: "You've been assigned a new SOP: 'Chemical Handling Procedures'",
-      date: '2025-07-10T14:30:00Z',
-      isRead: false,
-      documentId: '1',
-      documentTitle: 'Chemical Handling Procedures',
-      priority: 'high',
-      sender: 'John Smith',
-      dueDate: '2025-07-15'
-    },
-    {
-      id: '2',
-      type: 'reminder',
-      title: 'Acknowledgment Reminder',
-      message: "Reminder: Acknowledge 'Emergency Response Plan' by July 12",
-      date: '2025-07-09T09:15:00Z',
-      isRead: true,
-      documentId: '2',
-      documentTitle: 'Emergency Response Plan',
-      priority: 'urgent',
-      sender: 'Sarah Johnson',
-      dueDate: '2025-07-12'
-    },
-    {
-      id: '3',
-      type: 'updated',
-      title: 'Document Updated',
-      message: "'Workplace Harassment Policy' has been updated. Please re-acknowledge.",
-      date: '2025-07-08T16:45:00Z',
-      isRead: false,
-      documentId: '5',
-      documentTitle: 'Workplace Harassment Policy',
-      priority: 'medium',
-      sender: 'Lisa Chen',
-      dueDate: '2025-07-20'
-    },
-    {
-      id: '4',
-      type: 'deadline',
-      title: 'Approaching Deadline',
-      message: "'Data Privacy Training' acknowledgment due in 2 days",
-      date: '2025-07-08T11:00:00Z',
-      isRead: true,
-      documentId: '3',
-      documentTitle: 'Data Privacy Training',
-      priority: 'medium',
-      sender: 'Mike Brown',
-      dueDate: '2025-07-20'
-    },
-    {
-      id: '5',
-      type: 'general',
-      title: 'System Maintenance',
-      message: 'Scheduled system maintenance on July 15th from 2-4 AM',
-      date: '2025-07-07T10:30:00Z',
-      isRead: false,
-      priority: 'low',
-      sender: 'System Administrator'
-    },
-    {
-      id: '6',
-      type: 'assigned',
-      title: 'Training Module Assigned',
-      message: "New training module assigned: 'Cybersecurity Awareness'",
-      date: '2025-07-06T13:20:00Z',
-      isRead: true,
-      documentId: '7',
-      documentTitle: 'Cybersecurity Training Module',
-      priority: 'medium',
-      sender: 'Alex Thompson',
-      dueDate: '2025-07-25'
-    },
-    {
-      id: '7',
-      type: 'deadline',
-      title: 'Overdue Document',
-      message: "'Emergency Response Plan' acknowledgment is now overdue",
-      date: '2025-07-05T08:00:00Z',
-      isRead: false,
-      documentId: '2',
-      documentTitle: 'Emergency Response Plan',
-      priority: 'urgent',
-      sender: 'Sarah Johnson'
-    }
-  ]);
-
-  const [typeFilter, setTypeFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [selectedNotification, setSelectedNotification] = useState<string | null>(null);
-
-  // Filter notifications
-  const filteredNotifications = useMemo(() => {
-    return notifications.filter(notification => {
-      const matchesType = typeFilter === 'all' || notification.type === typeFilter;
-      const matchesStatus = statusFilter === 'all' || 
-        (statusFilter === 'unread' && !notification.isRead) ||
-        (statusFilter === 'read' && notification.isRead);
-      
-      return matchesType && matchesStatus;
-    });
-  }, [notifications, typeFilter, statusFilter]);
-
-  // Calculate counts
-  const notificationCounts = useMemo(() => {
-    return {
-      total: notifications.length,
-      unread: notifications.filter(n => !n.isRead).length,
-      urgent: notifications.filter(n => n.priority === 'urgent').length,
-      today: notifications.filter(n => {
-        const notifDate = new Date(n.date);
-        const today = new Date();
-        return notifDate.toDateString() === today.toDateString();
-      }).length
-    };
-  }, [notifications]);
+export function NotificationsPage() {
+  const { currentUser } = useAuth();
+  const {
+    filteredNotifications,
+    stats: notificationCounts,
+    loading,
+    error,
+    filters,
+    selectedNotification,
+    setFilters,
+    clearFilters,
+    markAsRead,
+    markAsUnread,
+    markAllAsRead,
+    deleteNotification,
+    deleteAllRead,
+    refreshNotifications,
+    setSelectedNotification
+  } = useNotifications(currentUser?.id || null);
 
   const getNotificationIcon = (type: string) => {
     const icons = {
@@ -180,30 +59,29 @@ export function NotificationsPage({ currentUser }: NotificationsPageProps) {
   };
 
   const getNotificationColor = (type: string, priority: string) => {
-    if (priority === 'urgent') return 'text-red-600 bg-red-50';
-    
-    const colors = {
-      assigned: 'text-blue-600 bg-blue-50',
-      reminder: 'text-amber-600 bg-amber-50',
-      updated: 'text-purple-600 bg-purple-50',
-      deadline: 'text-red-600 bg-red-50',
-      general: 'text-gray-600 bg-gray-50'
-    };
-    return colors[type as keyof typeof colors] || 'text-gray-600 bg-gray-50';
+    const urgentColors = 'bg-red-100 text-red-700';
+    const highColors = 'bg-orange-100 text-orange-700';
+    const mediumColors = 'bg-blue-100 text-blue-700';
+    const lowColors = 'bg-gray-100 text-gray-700';
+
+    if (priority === 'urgent') return urgentColors;
+    if (priority === 'high') return highColors;
+    if (priority === 'medium') return mediumColors;
+    return lowColors;
   };
 
   const getPriorityBadge = (priority: string) => {
-    const config = {
+    const configs = {
       urgent: { color: 'bg-red-100 text-red-800 border-red-200', label: 'Urgent' },
       high: { color: 'bg-orange-100 text-orange-800 border-orange-200', label: 'High' },
       medium: { color: 'bg-blue-100 text-blue-800 border-blue-200', label: 'Medium' },
       low: { color: 'bg-gray-100 text-gray-800 border-gray-200', label: 'Low' }
     };
     
-    const { color, label } = config[priority as keyof typeof config];
+    const config = configs[priority as keyof typeof configs] || configs.medium;
     return (
-      <Badge variant="outline" className={`${color} text-xs`}>
-        {label}
+      <Badge variant="outline" className={`${config.color} text-xs`}>
+        {config.label}
       </Badge>
     );
   };
@@ -215,50 +93,23 @@ export function NotificationsPage({ currentUser }: NotificationsPageProps) {
     
     if (diffInHours < 1) {
       const diffInMinutes = Math.floor(diffInHours * 60);
-      return `${diffInMinutes} minute${diffInMinutes !== 1 ? 's' : ''} ago`;
+      return diffInMinutes <= 1 ? 'Just now' : `${diffInMinutes} minutes ago`;
     } else if (diffInHours < 24) {
-      const hours = Math.floor(diffInHours);
-      return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+      return `${Math.floor(diffInHours)} hours ago`;
     } else if (diffInHours < 48) {
       return 'Yesterday';
     } else {
-      return date.toLocaleDateString();
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+      });
     }
   };
 
-  const markAsRead = (notificationId: string) => {
-    setNotifications(prev => 
-      prev.map(notification => 
-        notification.id === notificationId 
-          ? { ...notification, isRead: true }
-          : notification
-      )
-    );
-  };
-
-  const markAsUnread = (notificationId: string) => {
-    setNotifications(prev => 
-      prev.map(notification => 
-        notification.id === notificationId 
-          ? { ...notification, isRead: false }
-          : notification
-      )
-    );
-  };
-
-  const markAllAsRead = () => {
-    setNotifications(prev => 
-      prev.map(notification => ({ ...notification, isRead: true }))
-    );
-  };
-
-  const deleteNotification = (notificationId: string) => {
-    setNotifications(prev => prev.filter(n => n.id !== notificationId));
-  };
-
-  const handleNotificationClick = (notification: Notification) => {
+  const handleNotificationClick = async (notification: Notification) => {
     if (!notification.isRead) {
-      markAsRead(notification.id);
+      await markAsRead(notification.id);
     }
     setSelectedNotification(notification.id);
     
@@ -267,6 +118,48 @@ export function NotificationsPage({ currentUser }: NotificationsPageProps) {
       console.log(`Navigating to document: ${notification.documentTitle}`);
     }
   };
+
+  const handleFilterChange = (filterType: string, value: string) => {
+    setFilters({ [filterType]: value });
+  };
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="p-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <Loader2 className="w-8 h-8 animate-spin text-purple-600 mx-auto mb-4" />
+              <p className="text-gray-600">Loading notifications...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <AlertCircle className="w-8 h-8 text-red-600 mx-auto mb-4" />
+              <p className="text-red-600 mb-4">{error}</p>
+              <Button onClick={refreshNotifications} variant="outline">
+                <RefreshCcw className="w-4 h-4 mr-2" />
+                Try Again
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const hasActiveFilters = filters.type !== 'all' || filters.status !== 'all' || filters.priority !== 'all';
 
   return (
     <div className="p-8">
@@ -279,7 +172,7 @@ export function NotificationsPage({ currentUser }: NotificationsPageProps) {
               <p className="text-gray-600">Stay updated with important compliance alerts</p>
             </div>
             <div className="flex items-center space-x-3 mt-4 md:mt-0">
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
+              <Select value={filters.type || 'all'} onValueChange={(value) => handleFilterChange('type', value)}>
                 <SelectTrigger className="w-40">
                   <SelectValue placeholder="Filter by type" />
                 </SelectTrigger>
@@ -292,7 +185,7 @@ export function NotificationsPage({ currentUser }: NotificationsPageProps) {
                   <SelectItem value="general">General</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <Select value={filters.status || 'all'} onValueChange={(value) => handleFilterChange('status', value)}>
                 <SelectTrigger className="w-32">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
@@ -308,6 +201,10 @@ export function NotificationsPage({ currentUser }: NotificationsPageProps) {
                   Mark All Read
                 </Button>
               )}
+              <Button onClick={refreshNotifications} variant="outline" size="sm">
+                <RefreshCcw className="w-4 h-4 mr-2" />
+                Refresh
+              </Button>
             </div>
           </div>
         </div>
@@ -370,12 +267,19 @@ export function NotificationsPage({ currentUser }: NotificationsPageProps) {
               <div>
                 <CardTitle>Recent Notifications</CardTitle>
                 <CardDescription>
-                  {filteredNotifications.length} of {notifications.length} notifications
-                  {typeFilter !== 'all' && ` • Filtered by: ${typeFilter}`}
-                  {statusFilter !== 'all' && ` • Status: ${statusFilter}`}
+                  {filteredNotifications.length} of {notificationCounts.total} notifications
+                  {hasActiveFilters && ' (filtered)'}
                 </CardDescription>
               </div>
-              <Filter className="w-5 h-5 text-gray-400" />
+              <div className="flex items-center space-x-2">
+                {hasActiveFilters && (
+                  <Button variant="ghost" size="sm" onClick={clearFilters}>
+                    <X className="w-4 h-4 mr-1" />
+                    Clear Filters
+                  </Button>
+                )}
+                <Filter className="w-5 h-5 text-gray-400" />
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -498,11 +402,16 @@ export function NotificationsPage({ currentUser }: NotificationsPageProps) {
                 <Bell className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No notifications found</h3>
                 <p className="text-gray-500">
-                  {typeFilter !== 'all' || statusFilter !== 'all'
+                  {hasActiveFilters
                     ? 'Try adjusting your filters to see more notifications'
                     : 'You\'re all caught up! No new notifications.'
                   }
                 </p>
+                {hasActiveFilters && (
+                  <Button variant="outline" onClick={clearFilters} className="mt-4">
+                    Clear Filters
+                  </Button>
+                )}
               </div>
             )}
           </CardContent>

@@ -428,11 +428,11 @@ function AuthenticatedAppRouter({
         )}
         
         {currentPage === 'history' && (
-          <HistoryPage currentUser={currentUser} />
+          <HistoryPage />
         )}
         
         {currentPage === 'notifications' && (
-          <NotificationsPage currentUser={currentUser} />
+          <NotificationsPage />
         )}
         
         {currentPage === 'help' && (
