@@ -228,7 +228,7 @@ export function Dashboard({ user, onNavigate }: DashboardProps) {
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
               <TrendingUp className="w-5 h-5 text-purple-600" />
-              <span>Acknowledgment Trend (Last 6 Months)</span>
+              <span>Acknowledgment Trends (Last 6 Months)</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -238,7 +238,9 @@ export function Dashboard({ user, onNavigate }: DashboardProps) {
                 <XAxis dataKey="month" />
                 <YAxis />
                 <Tooltip />
-                <Line type="monotone" dataKey="acknowledged" stroke="#8b5cf6" strokeWidth={3} />
+                <Legend />
+                <Line type="monotone" dataKey="assigned" stroke="#3b82f6" strokeWidth={2} name="Assigned" />
+                <Line type="monotone" dataKey="acknowledged" stroke="#8b5cf6" strokeWidth={3} name="Acknowledged" />
               </LineChart>
             </ResponsiveContainer>
           </CardContent>

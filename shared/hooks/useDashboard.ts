@@ -141,16 +141,8 @@ export function useDashboard(): UseDashboardReturn {
       // Process users data
       const activeUsers = companyUsers.filter(user => user.status === 'active').length;
 
-      // Create mock acknowledgment trend data (last 6 months)
-      // In a real scenario, you'd query this from the database
-      const acknowledgmentTrend = [
-        { month: 'Jul', acknowledged: acknowledgedCount * 0.7 },
-        { month: 'Aug', acknowledged: acknowledgedCount * 0.8 },
-        { month: 'Sep', acknowledged: acknowledgedCount * 0.6 },
-        { month: 'Oct', acknowledged: acknowledgedCount * 0.9 },
-        { month: 'Nov', acknowledged: acknowledgedCount * 0.85 },
-        { month: 'Dec', acknowledged: acknowledgedCount }
-      ];
+      // Get real acknowledgment trend data (last 6 months)
+      const acknowledgmentTrend = await AcknowledgmentService.getAcknowledgmentTrend(6);
 
       // Process compliance by department from compliance report
       const complianceByDepartment = complianceReport.data.map(dept => ({

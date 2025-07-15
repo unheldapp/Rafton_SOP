@@ -480,6 +480,112 @@ export class AcknowledgmentService {
     return stats;
   }
 
+  static async getAcknowledgmentTrend(months: number = 6): Promise<Array<{ month: string; acknowledged: number; assigned: number }>> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User not authenticated');
+      }
+
+      // Get the date range for the last N months
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setMonth(startDate.getMonth() - months);
+
+      // Query assignments with acknowledgments - exactly like getAcknowledgmentStats but with date filtering
+      const { data: assignments, error } = await supabase
+        .from('sop_assignments')
+        .select(`
+          *,
+          acknowledgment:acknowledgments(id, acknowledged_at)
+        `)
+        .gte('created_at', startDate.toISOString())
+        .lte('created_at', endDate.toISOString());
+
+      if (error) {
+        console.error('Error fetching assignment trends:', error);
+        throw error;
+      }
+
+      console.log('getAcknowledgmentTrend: Raw assignments data:', assignments);
+      console.log('getAcknowledgmentTrend: Date range:', { startDate, endDate });
+
+      // Initialize months
+      const monthlyData = new Map<string, { acknowledged: number; assigned: number }>();
+      for (let i = months - 1; i >= 0; i--) {
+        const date = new Date();
+        date.setMonth(date.getMonth() - i);
+        const monthKey = date.toLocaleDateString('en-US', { month: 'short' });
+        monthlyData.set(monthKey, { acknowledged: 0, assigned: 0 });
+      }
+
+      console.log('getAcknowledgmentTrend: Initialized months:', Array.from(monthlyData.keys()));
+
+      // Process assignments data
+      assignments?.forEach((assignment, index) => {
+        console.log(`Processing assignment ${index}:`, {
+          id: assignment.id,
+          created_at: assignment.created_at,
+          acknowledgment: assignment.acknowledgment
+        });
+
+        // Count assignment in the month it was created
+        const createdDate = new Date(assignment.created_at);
+        const createdMonthKey = createdDate.toLocaleDateString('en-US', { month: 'short' });
+        
+        console.log(`Assignment ${index} created in month:`, createdMonthKey);
+        
+        if (monthlyData.has(createdMonthKey)) {
+          const current = monthlyData.get(createdMonthKey)!;
+          current.assigned += 1;
+          console.log(`Incremented assigned count for ${createdMonthKey} to:`, current.assigned);
+        } else {
+          console.log(`Month ${createdMonthKey} not found in monthlyData`);
+        }
+
+        // If there's an acknowledgment, count it in the month it was acknowledged
+        if (assignment.acknowledgment && assignment.acknowledgment.length > 0) {
+          const acknowledgedDate = new Date(assignment.acknowledgment[0].acknowledged_at);
+          const acknowledgedMonthKey = acknowledgedDate.toLocaleDateString('en-US', { month: 'short' });
+          
+          console.log(`Assignment ${index} acknowledged in month:`, acknowledgedMonthKey);
+          
+          if (monthlyData.has(acknowledgedMonthKey)) {
+            const current = monthlyData.get(acknowledgedMonthKey)!;
+            current.acknowledged += 1;
+            console.log(`Incremented acknowledged count for ${acknowledgedMonthKey} to:`, current.acknowledged);
+          } else {
+            console.log(`Month ${acknowledgedMonthKey} not found in monthlyData`);
+          }
+        } else {
+          console.log(`Assignment ${index} has no acknowledgment`);
+        }
+      });
+
+      // Convert to array format expected by the chart
+      const result = Array.from(monthlyData.entries()).map(([month, data]) => ({
+        month,
+        acknowledged: data.acknowledged,
+        assigned: data.assigned
+      }));
+
+      console.log('getAcknowledgmentTrend: Final result:', result);
+      return result;
+
+    } catch (error) {
+      console.error('Error in getAcknowledgmentTrend:', error);
+      // Return empty array on error
+      const result = [];
+      for (let i = months - 1; i >= 0; i--) {
+        const date = new Date();
+        date.setMonth(date.getMonth() - i);
+        const monthKey = date.toLocaleDateString('en-US', { month: 'short' });
+        result.push({ month: monthKey, acknowledged: 0, assigned: 0 });
+      }
+      return result;
+    }
+  }
+
   private static getEmptyStats(): AcknowledgmentStats {
     return {
       totalAssigned: 0,
