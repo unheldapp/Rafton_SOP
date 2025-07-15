@@ -291,21 +291,69 @@ export function Dashboard({ user, onNavigate }: DashboardProps) {
       {/* SOP Review Pipeline */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <BarChart3 className="w-5 h-5 text-purple-600" />
-            <span>SOP Review Pipeline</span>
+          <CardTitle className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <BarChart3 className="w-5 h-5 text-purple-600" />
+              <span>SOP Review Pipeline</span>
+            </div>
+            <div className="text-sm text-gray-500">
+              {sopReviewPipeline.reduce((total, item) => total + item.count, 0)} Total Reviews
+            </div>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={150}>
-            <BarChart data={sopReviewPipeline} layout="horizontal">
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" />
-              <YAxis dataKey="status" type="category" width={100} />
-              <Tooltip />
-              <Bar dataKey="count" fill="#8b5cf6" />
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={sopReviewPipeline} layout="horizontal" margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+              <XAxis 
+                type="number" 
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 12, fill: '#64748b' }}
+              />
+              <YAxis 
+                dataKey="status" 
+                type="category" 
+                width={120}
+                axisLine={false}
+                tickLine={false}
+                tick={{ fontSize: 12, fill: '#374151' }}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: 'white',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+                  fontSize: '12px'
+                }}
+                formatter={(value, name) => [value, 'Reviews']}
+                labelFormatter={(label) => `Status: ${label}`}
+              />
+              <Bar 
+                dataKey="count" 
+                radius={[0, 4, 4, 0]}
+                fill={(entry) => entry.color}
+              >
+                {sopReviewPipeline.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
+          {/* Status Legend */}
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {sopReviewPipeline.map((item, index) => (
+              <div key={item.status} className="flex items-center space-x-2">
+                <div 
+                  className="w-3 h-3 rounded-full" 
+                  style={{ backgroundColor: item.color }}
+                ></div>
+                <span className="text-sm text-gray-600">{item.status}</span>
+                <span className="text-sm font-medium text-gray-900">{item.count}</span>
+              </div>
+            ))}
+          </div>
         </CardContent>
       </Card>
 

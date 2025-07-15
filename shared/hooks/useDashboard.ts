@@ -144,6 +144,9 @@ export function useDashboard(): UseDashboardReturn {
       // Get real acknowledgment trend data (last 6 months)
       const acknowledgmentTrend = await AcknowledgmentService.getAcknowledgmentTrend(6);
 
+      // Get real SOP review pipeline data
+      const sopReviewPipeline = await AcknowledgmentService.getSOPReviewPipeline();
+
       // Process compliance by department from compliance report
       const complianceByDepartment = complianceReport.data.map(dept => ({
         name: dept.department,
@@ -158,13 +161,6 @@ export function useDashboard(): UseDashboardReturn {
         date: new Date(log.created_at).toLocaleString(),
         entity: log.resource_type || 'Unknown'
       }));
-
-      // Create SOP review pipeline
-      const sopReviewPipeline = [
-        { status: 'Expiring Soon', count: sopsExpiringSoon },
-        { status: 'Under Review', count: pendingReviewSOPs.length },
-        { status: 'Overdue', count: overdueAcknowledgments }
-      ];
 
       // Get upcoming acknowledgment deadlines from acknowledgment service
       const upcomingAcknowledgments = await AcknowledgmentService.getAcknowledgments({

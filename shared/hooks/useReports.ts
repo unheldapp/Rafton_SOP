@@ -40,15 +40,16 @@ export function useReports(reportType: ReportType): UseReportsReturn {
   });
 
   const fetchData = useCallback(async () => {
-    if (!currentUser?.company_id) {
+    if (!currentUser?.company?.id) {
       console.log('useReports: No company_id found, skipping fetch');
+      console.log('useReports: currentUser:', currentUser);
       return;
     }
     
     setLoading(true);
     setError(null);
     
-    console.log(`useReports: Fetching ${reportType} report for company:`, currentUser.company_id);
+    console.log(`useReports: Fetching ${reportType} report for company:`, currentUser.company.id);
     console.log('useReports: Filters:', filters);
     console.log('useReports: Pagination:', pagination);
     
@@ -58,7 +59,7 @@ export function useReports(reportType: ReportType): UseReportsReturn {
         case 'acknowledgment':
           console.log('useReports: Calling getAcknowledgmentReport...');
           result = await reportService.getAcknowledgmentReport(
-            currentUser.company_id,
+            currentUser.company.id,
             filters,
             pagination
           );
@@ -66,7 +67,7 @@ export function useReports(reportType: ReportType): UseReportsReturn {
         case 'sop-review':
           console.log('useReports: Calling getSOPReviewReport...');
           result = await reportService.getSOPReviewReport(
-            currentUser.company_id,
+            currentUser.company.id,
             filters,
             pagination
           );
@@ -74,7 +75,7 @@ export function useReports(reportType: ReportType): UseReportsReturn {
         case 'user-activity':
           console.log('useReports: Calling getUserActivityReport...');
           result = await reportService.getUserActivityReport(
-            currentUser.company_id,
+            currentUser.company.id,
             filters,
             pagination
           );
@@ -82,7 +83,7 @@ export function useReports(reportType: ReportType): UseReportsReturn {
         case 'compliance-summary':
           console.log('useReports: Calling getComplianceSummaryReport...');
           result = await reportService.getComplianceSummaryReport(
-            currentUser.company_id,
+            currentUser.company.id,
             filters,
             pagination
           );
@@ -90,7 +91,7 @@ export function useReports(reportType: ReportType): UseReportsReturn {
         case 'audit-trail':
           console.log('useReports: Calling getAuditTrailReport...');
           result = await reportService.getAuditTrailReport(
-            currentUser.company_id,
+            currentUser.company.id,
             filters,
             pagination
           );
@@ -109,20 +110,20 @@ export function useReports(reportType: ReportType): UseReportsReturn {
     } finally {
       setLoading(false);
     }
-  }, [currentUser?.company_id, reportType, filters, pagination]);
+  }, [currentUser?.company?.id, reportType, filters, pagination]);
 
   const refreshData = useCallback(async () => {
     await fetchData();
   }, [fetchData]);
 
   const exportReport = useCallback(async (format: 'csv' | 'excel' | 'pdf') => {
-    if (!currentUser?.company_id) return;
+    if (!currentUser?.company?.id) return;
     
     try {
       setLoading(true);
       const blob = await reportService.exportReport(
         reportType,
-        currentUser.company_id,
+        currentUser.company.id,
         filters,
         format
       );
@@ -142,7 +143,7 @@ export function useReports(reportType: ReportType): UseReportsReturn {
     } finally {
       setLoading(false);
     }
-  }, [currentUser?.company_id, reportType, filters]);
+  }, [currentUser?.company?.id, reportType, filters]);
 
   // Fetch data when dependencies change
   useEffect(() => {

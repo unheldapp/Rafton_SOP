@@ -586,6 +586,67 @@ export class AcknowledgmentService {
     }
   }
 
+  /**
+   * Get SOP review pipeline data for dashboard
+   */
+  static async getSOPReviewPipeline(): Promise<Array<{ status: string; count: number; color: string }>> {
+    try {
+      const { data: reviews, error } = await supabase
+        .from('sop_reviews')
+        .select('status');
+
+      if (error) {
+        console.error('Error fetching SOP review pipeline:', error);
+        throw error;
+      }
+
+      // Count reviews by status
+      const statusCounts = new Map<string, number>();
+      const statusLabels = new Map<string, string>();
+      const statusColors = new Map<string, string>();
+
+      // Initialize all possible statuses
+      statusCounts.set('pending', 0);
+      statusCounts.set('approved', 0);
+      statusCounts.set('rejected', 0);
+      statusCounts.set('changes_requested', 0);
+
+      // Set readable labels and colors
+      statusLabels.set('pending', 'Pending Review');
+      statusLabels.set('approved', 'Approved');
+      statusLabels.set('rejected', 'Rejected');
+      statusLabels.set('changes_requested', 'Changes Requested');
+
+      statusColors.set('pending', '#f59e0b'); // amber
+      statusColors.set('approved', '#10b981'); // emerald
+      statusColors.set('rejected', '#ef4444'); // red
+      statusColors.set('changes_requested', '#8b5cf6'); // purple
+
+      // Count the actual reviews
+      reviews?.forEach(review => {
+        const currentCount = statusCounts.get(review.status) || 0;
+        statusCounts.set(review.status, currentCount + 1);
+      });
+
+      // Convert to array format expected by the chart
+      return Array.from(statusCounts.entries()).map(([status, count]) => ({
+        status: statusLabels.get(status) || status,
+        count,
+        color: statusColors.get(status) || '#6b7280'
+      }));
+
+    } catch (error) {
+      console.error('Error in getSOPReviewPipeline:', error);
+      // Return empty array on error
+      return [
+        { status: 'Pending Review', count: 0, color: '#f59e0b' },
+        { status: 'Approved', count: 0, color: '#10b981' },
+        { status: 'Rejected', count: 0, color: '#ef4444' },
+        { status: 'Changes Requested', count: 0, color: '#8b5cf6' }
+      ];
+    }
+  }
+
   private static getEmptyStats(): AcknowledgmentStats {
     return {
       totalAssigned: 0,

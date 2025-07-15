@@ -130,130 +130,116 @@ class ReportService {
     pagination: PaginationParams
   ): Promise<{ data: AcknowledgmentReportData[]; total: number; stats: ReportStats }> {
     try {
-      console.log('ReportService: Fetching acknowledgment report for company:', companyId);
+      console.log('ReportService: Simple acknowledgment report for company:', companyId);
       
-      // TEMPORARILY REMOVED DATE FILTERING FOR DEBUGGING
-      // const { startDate, endDate } = this.getDateRangeFilter(filters.dateRange);
-      
-      let query = supabase
+      // Step 1: Get assignments
+      const { data: assignments, error: assignmentsError } = await supabase
         .from('sop_assignments')
-        .select(`
-          id,
-          due_date,
-          priority,
-          status,
-          notes,
-          created_at,
-          sop_id,
-          user_id,
-          assigned_by,
-          sops!inner (
-            id,
-            title,
-            version,
-            department,
-            company_id
-          ),
-          user:users!user_id (
-            id,
-            first_name,
-            last_name,
-            email,
-            department
-          ),
-          assigned_by_user:users!assigned_by (
-            first_name,
-            last_name
-          ),
-          acknowledgments (
-            id,
-            acknowledged_at,
-            notes
-          )
-        `)
-        .eq('sops.company_id', companyId);
-        // REMOVED DATE FILTERS FOR TESTING:
-        // .gte('created_at', startDate)
-        // .lte('created_at', endDate);
+        .select('*')
+        .eq('company_id', companyId)
+        .order('created_at', { ascending: false });
 
-      console.log('ReportService: Base query created for company:', companyId);
-
-      // Apply other filters
-      if (filters.status !== 'all') {
-        query = query.eq('status', filters.status);
-        console.log('ReportService: Applied status filter:', filters.status);
-      }
-      
-      if (filters.department !== 'all') {
-        query = query.eq('sops.department', filters.department);
-        console.log('ReportService: Applied department filter:', filters.department);
-      }
-      
-      if (filters.priority !== 'all') {
-        query = query.eq('priority', filters.priority);
-        console.log('ReportService: Applied priority filter:', filters.priority);
+      if (assignmentsError) {
+        console.error('ReportService: Assignments error:', assignmentsError);
+        throw assignmentsError;
       }
 
-      console.log('ReportService: Getting count...');
-      // Get total count first
-      const { count, error: countError } = await query.select('*', { count: 'exact', head: true });
-      
-      if (countError) {
-        console.error('ReportService: Count error:', countError);
-      } else {
-        console.log('ReportService: Count result:', count);
-      }
-      
-      // Apply pagination and search
-      if (pagination.search) {
-        query = query.or(`sops.title.ilike.%${pagination.search}%,user.first_name.ilike.%${pagination.search}%,user.last_name.ilike.%${pagination.search}%`);
-      }
-      
-      console.log('ReportService: Executing final query...');
-      const { data, error } = await query
-        .order('created_at', { ascending: false })
-        .range(
-          (pagination.page - 1) * pagination.itemsPerPage,
-          pagination.page * pagination.itemsPerPage - 1
-        );
-
-      if (error) {
-        console.error('ReportService: Query error:', error);
-        throw error;
+      if (!assignments || assignments.length === 0) {
+        return { data: [], total: 0, stats: { total: 0, acknowledged: 0, pending: 0, overdue: 0, declined: 0 } };
       }
 
-      console.log('ReportService: Raw data received:', data);
-      console.log('ReportService: Data count:', data?.length || 0);
+      console.log('ReportService: Got assignments:', assignments.length);
+      console.log('ReportService: Sample assignment:', assignments[0]);
 
-      const reportData: AcknowledgmentReportData[] = (data || []).map(item => ({
-        id: item.id,
-        document: item.sops?.title || 'Unknown',
-        assignedTo: `${item.user?.first_name || ''} ${item.user?.last_name || ''}`.trim() || 'Unknown User',
-        status: item.status as 'pending' | 'acknowledged' | 'overdue' | 'declined',
-        dueDate: item.due_date ? new Date(item.due_date).toLocaleDateString() : '—',
-        acknowledgedOn: item.acknowledgments?.[0]?.acknowledged_at 
-          ? new Date(item.acknowledgments[0].acknowledged_at).toLocaleDateString()
-          : '—',
-        version: item.sops?.version || 'v1.0',
-        department: item.sops?.department || item.user?.department || 'Unknown',
-        priority: item.priority || 'medium',
-        assignedBy: `${item.assigned_by_user?.first_name || ''} ${item.assigned_by_user?.last_name || ''}`.trim() || 'Unknown',
-        notes: item.notes || undefined
-      }));
+      // Step 2: Get related data
+      const allSopIds = assignments.map(a => a.sop_id).filter(id => id);
+      const allUserIds = assignments.map(a => a.user_id).filter(id => id);
+      const allAssignedByIds = assignments.map(a => a.assigned_by).filter(id => id);
+      const allAssignmentIds = assignments.map(a => a.id).filter(id => id);
+
+      console.log('ReportService: IDs to fetch:', { 
+        sops: allSopIds.length, 
+        users: allUserIds.length, 
+        assignedBy: allAssignedByIds.length,
+        assignments: allAssignmentIds.length 
+      });
+
+      // Fetch all data
+      const [sopsResult, usersResult, assignedByResult, acknowledgementsResult] = await Promise.all([
+        allSopIds.length > 0 ? supabase.from('sops').select('*').in('id', allSopIds) : { data: [], error: null },
+        allUserIds.length > 0 ? supabase.from('users').select('*').in('id', allUserIds) : { data: [], error: null },
+        allAssignedByIds.length > 0 ? supabase.from('users').select('*').in('id', allAssignedByIds) : { data: [], error: null },
+        allAssignmentIds.length > 0 ? supabase.from('acknowledgments').select('*').in('assignment_id', allAssignmentIds) : { data: [], error: null }
+      ]);
+
+      if (sopsResult.error) throw sopsResult.error;
+      if (usersResult.error) throw usersResult.error;
+      if (assignedByResult.error) throw assignedByResult.error;
+      if (acknowledgementsResult.error) throw acknowledgementsResult.error;
+
+      const sops = sopsResult.data || [];
+      const users = usersResult.data || [];
+      const assignedByUsers = assignedByResult.data || [];
+      const acknowledgments = acknowledgementsResult.data || [];
+
+      console.log('ReportService: Fetched data:', { 
+        sops: sops.length, 
+        users: users.length, 
+        assignedBy: assignedByUsers.length,
+        acknowledgments: acknowledgments.length 
+      });
+
+      // Create lookup maps
+      const sopMap = new Map();
+      const userMap = new Map();
+      const acknowledgmentMap = new Map();
+
+      sops.forEach(sop => sopMap.set(sop.id, sop));
+      users.forEach(user => userMap.set(user.id, user));
+      assignedByUsers.forEach(user => userMap.set(user.id, user));
+      acknowledgments.forEach(ack => acknowledgmentMap.set(ack.assignment_id, ack));
+
+      // Process data
+      const reportData = assignments.map((assignment) => {
+        const sop = sopMap.get(assignment.sop_id);
+        const user = userMap.get(assignment.user_id);
+        const assignedByUser = userMap.get(assignment.assigned_by);
+        const acknowledgment = acknowledgmentMap.get(assignment.id);
+
+        return {
+          id: assignment.id,
+          document: sop ? sop.title : 'Unknown Document',
+          assignedTo: user ? `${user.first_name} ${user.last_name}`.trim() : 'Unknown User',
+          status: assignment.status,
+          dueDate: assignment.due_date ? new Date(assignment.due_date).toLocaleDateString() : '—',
+          acknowledgedOn: acknowledgment ? new Date(acknowledgment.acknowledged_at).toLocaleDateString() : '—',
+          version: sop ? sop.version : 'v1.0',
+          department: sop ? sop.department : (user ? user.department : 'Unknown'),
+          priority: assignment.priority || 'medium',
+          assignedBy: assignedByUser ? `${assignedByUser.first_name} ${assignedByUser.last_name}`.trim() : 'Unknown',
+          notes: assignment.notes || undefined
+        };
+      });
 
       // Calculate stats
-      const stats: ReportStats = {
-        total: count || 0,
+      const stats = {
+        total: assignments.length,
         acknowledged: reportData.filter(item => item.status === 'acknowledged').length,
         pending: reportData.filter(item => item.status === 'pending').length,
         overdue: reportData.filter(item => item.status === 'overdue').length,
         declined: reportData.filter(item => item.status === 'declined').length
       };
 
-      console.log('ReportService: Final result - Data count:', reportData.length, 'Total:', count, 'Stats:', stats);
-      return { data: reportData, total: count || 0, stats };
+      console.log('ReportService: Final stats:', stats);
+      console.log('ReportService: Sample data:', reportData[0]);
+
+      return {
+        data: reportData,
+        total: assignments.length,
+        stats
+      };
     } catch (error) {
-      console.error('ReportService: Error fetching acknowledgment report:', error);
+      console.error('ReportService: Error in getAcknowledgmentReport:', error);
       throw error;
     }
   }
@@ -265,32 +251,47 @@ class ReportService {
   ): Promise<{ data: SOPReviewReportData[]; total: number; stats: ReportStats }> {
     try {
       console.log('ReportService: Fetching SOP review report for company:', companyId);
+      const { startDate, endDate } = this.getDateRangeFilter(filters.dateRange);
       
-      // First, let's just get all SOPs and create mock review data since sop_reviews table might be empty
+      // Query sop_reviews table with joins to get comprehensive review data
       let query = supabase
-        .from('sops')
+        .from('sop_reviews')
         .select(`
           id,
-          title,
-          version,
-          department,
-          priority,
-          next_review_date,
-          updated_at,
+          status,
+          comments,
+          review_type,
+          due_date,
+          completed_at,
           created_at,
-          author_id,
-          users!author_id (
+          updated_at,
+          sop:sops!inner (
+            id,
+            title,
+            version,
+            department,
+            priority,
+            company_id,
+            next_review_date,
+            updated_at
+          ),
+          reviewer:users!reviewer_id (
             first_name,
             last_name,
             email
           )
         `)
-        .eq('company_id', companyId)
-        .is('deleted_at', null);
+        .eq('sop.company_id', companyId)
+        .gte('created_at', startDate)
+        .lte('created_at', endDate);
 
       // Apply filters
+      if (filters.status !== 'all') {
+        query = query.eq('status', filters.status);
+      }
+      
       if (filters.department !== 'all') {
-        query = query.eq('department', filters.department);
+        query = query.eq('sop.department', filters.department);
       }
 
       // Get total count
@@ -298,11 +299,11 @@ class ReportService {
       
       // Apply pagination and search
       if (pagination.search) {
-        query = query.or(`title.ilike.%${pagination.search}%,users.first_name.ilike.%${pagination.search}%,users.last_name.ilike.%${pagination.search}%`);
+        query = query.or(`sop.title.ilike.%${pagination.search}%,reviewer.first_name.ilike.%${pagination.search}%,reviewer.last_name.ilike.%${pagination.search}%`);
       }
       
       const { data, error } = await query
-        .order('updated_at', { ascending: false })
+        .order('created_at', { ascending: false })
         .range(
           (pagination.page - 1) * pagination.itemsPerPage,
           pagination.page * pagination.itemsPerPage - 1
@@ -317,35 +318,42 @@ class ReportService {
 
       const now = new Date();
       const reportData: SOPReviewReportData[] = (data || []).map(item => {
-        const nextReviewDate = item.next_review_date ? new Date(item.next_review_date) : null;
-        const daysDiff = nextReviewDate ? Math.ceil((nextReviewDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)) : 0;
-        
+        // Determine review status based on due date and completion
         let reviewStatus: 'current' | 'due-soon' | 'overdue' = 'current';
-        if (daysDiff < 0) {
-          reviewStatus = 'overdue';
-        } else if (daysDiff <= 30) {
-          reviewStatus = 'due-soon';
+        
+        if (item.status === 'pending') {
+          if (item.due_date) {
+            const dueDate = new Date(item.due_date);
+            const daysDiff = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+            
+            if (daysDiff < 0) {
+              reviewStatus = 'overdue';
+            } else if (daysDiff <= 7) {
+              reviewStatus = 'due-soon';
+            }
+          }
         }
 
         return {
           id: item.id,
-          title: item.title || 'Unknown',
-          currentVersion: item.version || 'v1.0',
-          lastReviewed: item.updated_at ? new Date(item.updated_at).toLocaleDateString() : 'Never',
-          nextReview: nextReviewDate ? nextReviewDate.toLocaleDateString() : 'Not scheduled',
+          title: item.sop?.title || 'Unknown',
+          currentVersion: item.sop?.version || 'v1.0',
+          lastReviewed: item.completed_at ? new Date(item.completed_at).toLocaleDateString() : 'In Progress',
+          nextReview: item.sop?.next_review_date ? new Date(item.sop.next_review_date).toLocaleDateString() : 'Not scheduled',
           reviewStatus,
-          assignedReviewer: `${item.users?.first_name || ''} ${item.users?.last_name || ''}`.trim() || 'No reviewer',
-          department: item.department || 'Unknown',
-          priority: item.priority || 'medium',
-          reviewType: 'periodic'
+          assignedReviewer: `${item.reviewer?.first_name || ''} ${item.reviewer?.last_name || ''}`.trim() || 'No reviewer',
+          department: item.sop?.department || 'Unknown',
+          priority: item.sop?.priority || 'medium',
+          reviewType: item.review_type || 'approval'
         };
       });
 
       // Calculate stats
       const stats: ReportStats = {
         total: count || 0,
-        current: reportData.filter(item => item.reviewStatus === 'current').length,
-        dueSoon: reportData.filter(item => item.reviewStatus === 'due-soon').length,
+        pending: reportData.filter(item => item.lastReviewed === 'In Progress').length,
+        approved: data?.filter(item => item.status === 'approved').length || 0,
+        rejected: data?.filter(item => item.status === 'rejected').length || 0,
         overdue: reportData.filter(item => item.reviewStatus === 'overdue').length
       };
 
@@ -364,7 +372,9 @@ class ReportService {
   ): Promise<{ data: UserActivityReportData[]; total: number; stats: ReportStats }> {
     try {
       console.log('ReportService: Fetching user activity report for company:', companyId);
+      const { startDate, endDate } = this.getDateRangeFilter(filters.dateRange);
       
+      // Get users with their assignment and acknowledgment counts in a single optimized query
       let query = supabase
         .from('users')
         .select(`
@@ -376,7 +386,16 @@ class ReportService {
           role,
           status,
           last_login,
-          created_at
+          created_at,
+          assignments:sop_assignments (
+            id,
+            status,
+            created_at
+          ),
+          acknowledgments (
+            id,
+            acknowledged_at
+          )
         `)
         .eq('company_id', companyId)
         .is('deleted_at', null);
@@ -408,44 +427,49 @@ class ReportService {
 
       console.log('ReportService: Raw user activity data:', users);
 
-      // Now get assignment and acknowledgment counts for each user
-      const reportData: UserActivityReportData[] = [];
-      
-      for (const user of users || []) {
-        // Get assignment counts
-        const { data: assignments } = await supabase
-          .from('sop_assignments')
-          .select('id, status')
-          .eq('user_id', user.id);
+      // Process data to calculate activity metrics
+      const reportData: UserActivityReportData[] = (users || []).map(user => {
+        const assignments = user.assignments || [];
+        const acknowledgments = user.acknowledgments || [];
+        
+        // Filter activities within date range
+        const recentAssignments = assignments.filter(a => {
+          const assignmentDate = new Date(a.created_at);
+          return assignmentDate >= new Date(startDate) && assignmentDate <= new Date(endDate);
+        });
+        
+        const recentAcknowledgments = acknowledgments.filter(a => {
+          const ackDate = new Date(a.acknowledged_at);
+          return ackDate >= new Date(startDate) && ackDate <= new Date(endDate);
+        });
 
-        // Get acknowledgment counts
-        const { data: acknowledgments } = await supabase
-          .from('acknowledgments')
-          .select('id')
-          .eq('user_id', user.id);
-
-        reportData.push({
+        return {
           id: user.id,
           user: `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Unknown User',
           email: user.email,
           lastLogin: user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never',
-          acknowledgedCount: acknowledgments?.length || 0,
-          pendingCount: assignments?.filter(a => a.status === 'pending').length || 0,
+          acknowledgedCount: recentAcknowledgments.length,
+          pendingCount: recentAssignments.filter(a => a.status === 'pending').length,
           department: user.department || 'Unknown',
           role: user.role,
           status: user.status as 'active' | 'inactive',
           joinedAt: new Date(user.created_at).toLocaleDateString(),
-          totalAssignments: assignments?.length || 0
-        });
-      }
+          totalAssignments: recentAssignments.length
+        };
+      });
 
       // Calculate stats
       const totalAcknowledged = reportData.reduce((sum, item) => sum + item.acknowledgedCount, 0);
+      const totalPending = reportData.reduce((sum, item) => sum + item.pendingCount, 0);
+      const activeUsers = reportData.filter(item => item.status === 'active').length;
+      
       const stats: ReportStats = {
         total: count || 0,
-        active: reportData.filter(item => item.status === 'active').length,
+        active: activeUsers,
         inactive: reportData.filter(item => item.status === 'inactive').length,
-        avgAcknowledged: reportData.length > 0 ? Math.round(totalAcknowledged / reportData.length) : 0
+        avgAcknowledged: reportData.length > 0 ? Math.round(totalAcknowledged / reportData.length) : 0,
+        totalPending: totalPending,
+        totalAcknowledged: totalAcknowledged
       };
 
       console.log('ReportService: User activity report stats:', stats);
@@ -463,13 +487,15 @@ class ReportService {
   ): Promise<{ data: ComplianceSummaryData[]; total: number; stats: ReportStats }> {
     try {
       console.log('ReportService: Fetching compliance summary report for company:', companyId);
+      const { startDate, endDate } = this.getDateRangeFilter(filters.dateRange);
       
-      // Get department-wise compliance data by joining through SOPs
-      const { data: departmentData, error } = await supabase
+      // Get department-wise compliance data by joining through SOPs with date filtering
+      let query = supabase
         .from('sop_assignments')
         .select(`
           status,
           created_at,
+          due_date,
           sops!inner (
             department,
             company_id
@@ -478,9 +504,22 @@ class ReportService {
             id,
             department,
             status
+          ),
+          acknowledgments (
+            id,
+            acknowledged_at
           )
         `)
-        .eq('sops.company_id', companyId);
+        .eq('sops.company_id', companyId)
+        .gte('created_at', startDate)
+        .lte('created_at', endDate);
+
+      // Apply department filter
+      if (filters.department !== 'all') {
+        query = query.eq('sops.department', filters.department);
+      }
+
+      const { data: departmentData, error } = await query;
 
       if (error) {
         console.error('Error fetching compliance summary report:', error);
@@ -518,12 +557,24 @@ class ReportService {
         const deptData = departmentMap.get(dept)!;
         deptData.totalDocs++;
         
-        if (item.status === 'acknowledged') {
+        // Check if assignment has acknowledgment
+        const hasAcknowledgment = item.acknowledgments && item.acknowledgments.length > 0;
+        
+        if (hasAcknowledgment) {
           deptData.acknowledged++;
-        } else if (item.status === 'pending') {
-          deptData.pending++;
-        } else if (item.status === 'overdue') {
-          deptData.overdue++;
+          
+          // Calculate actual response time if we have acknowledgment data
+          const acknowledgedAt = new Date(item.acknowledgments[0].acknowledged_at);
+          const createdAt = new Date(item.created_at);
+          const responseTime = (acknowledgedAt.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
+          deptData.responseTimes.push(responseTime);
+        } else {
+          // Check if overdue
+          if (item.due_date && new Date(item.due_date) < new Date()) {
+            deptData.overdue++;
+          } else {
+            deptData.pending++;
+          }
         }
         
         if (item.user?.id) {
@@ -532,10 +583,6 @@ class ReportService {
             deptData.activeUsers.add(item.user.id);
           }
         }
-        
-        // Mock response time calculation
-        const mockResponseTime = Math.random() * 5 + 1; // 1-6 days
-        deptData.responseTimes.push(mockResponseTime);
       });
 
       const reportData: ComplianceSummaryData[] = Array.from(departmentMap.entries()).map(([dept, data], index) => {
