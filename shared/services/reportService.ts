@@ -210,7 +210,7 @@ class ReportService {
           id: assignment.id,
           document: sop ? sop.title : 'Unknown Document',
           assignedTo: user ? `${user.first_name} ${user.last_name}`.trim() : 'Unknown User',
-          status: assignment.status,
+          status: acknowledgment ? 'acknowledged' : assignment.status,
           dueDate: assignment.due_date ? new Date(assignment.due_date).toLocaleDateString() : '—',
           acknowledgedOn: acknowledgment ? new Date(acknowledgment.acknowledged_at).toLocaleDateString() : '—',
           version: sop ? sop.version : 'v1.0',
@@ -224,9 +224,9 @@ class ReportService {
       // Calculate stats
       const stats = {
         total: assignments.length,
-        acknowledged: reportData.filter(item => item.status === 'acknowledged').length,
-        pending: reportData.filter(item => item.status === 'pending').length,
-        overdue: reportData.filter(item => item.status === 'overdue').length,
+        acknowledged: reportData.filter(item => item.acknowledgedOn !== '—').length,
+        pending: reportData.filter(item => item.acknowledgedOn === '—' && item.status === 'pending').length,
+        overdue: reportData.filter(item => item.acknowledgedOn === '—' && item.status === 'overdue').length,
         declined: reportData.filter(item => item.status === 'declined').length
       };
 
